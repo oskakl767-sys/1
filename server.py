@@ -8,7 +8,6 @@ HTML-formatted bot messages - BEAUTIFUL & ORGANIZED
 """
 import eventlet
 eventlet.monkey_patch()
-import eventlet
 
 import hashlib
 import hmac
