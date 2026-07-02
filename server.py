@@ -554,8 +554,19 @@ def _format_file_list_result(dev, file_data):
     path = file_data.get("path", "/sdcard/")
     parent = file_data.get("parent", "")
     files = file_data.get("files", [])
+    error = file_data.get("error", "")
     
     kb = InlineKeyboardMarkup(row_width=1)
+    
+    if error:
+        text = (
+            f"❌ <b>خطأ في تصفح الملفات</b>\n\n"
+            f"📁 المسار: <code>{path}</code>\n"
+            f"⚠ الخطأ: {error}\n\n"
+            f"💡 قد تحتاج إذن التخزين"
+        )
+        kb.add(_back(did))
+        return text, kb
     
     # Add parent directory button
     if parent and parent != path:
@@ -595,15 +606,24 @@ def _format_file_list_result(dev, file_data):
     # Add back button
     kb.add(_back(did))
     
-    text = (
-        f"📂 <b>مستعرض الملفات</b>\n\n"
-        f"📱 <b>{short_label}</b>\n"
-        f"📁 <b>المسار:</b> <code>{path}</code>\n"
-        f"━━━━━━━━━━━━━━━\n"
-        f"📁 مجلدات: {dir_count} | 📄 ملفات: {file_count}\n\n"
-        f"💡 اضغط على مجلد للدخول\n"
-        f"💡 اضغط على ملف لتحميله"
-    )
+    if dir_count == 0 and file_count == 0:
+        text = (
+            f"📂 <b>مستعرض الملفات</b>\n\n"
+            f"📱 <b>{short_label}</b>\n"
+            f"📁 <b>المسار:</b> <code>{path}</code>\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"📁 المجلد فارغ"
+        )
+    else:
+        text = (
+            f"📂 <b>مستعرض الملفات</b>\n\n"
+            f"📱 <b>{short_label}</b>\n"
+            f"📁 <b>المسار:</b> <code>{path}</code>\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"📁 مجلدات: {dir_count} | 📄 ملفات: {file_count}\n\n"
+            f"💡 اضغط على مجلد للدخول\n"
+            f"💡 اضغط على ملف لتحميله"
+        )
     
     return text, kb
 
@@ -618,10 +638,17 @@ def _format_cmd_result(dev, command, status, data=None, error=None):
         text_resp = str(data) if not isinstance(data, str) else data
         
         # Check if this is a file_list JSON response (for file explorer)
-        if command == "ls" and text_resp.strip().startswith("{"):
+        if command == "ls":
             try:
                 import json as _json
-                file_data = _json.loads(text_resp)
+                # Handle both string and dict responses
+                if isinstance(data, str):
+                    file_data = _json.loads(data)
+                elif isinstance(data, dict):
+                    file_data = data
+                else:
+                    file_data = _json.loads(str(data))
+                
                 if file_data.get("type") == "file_list":
                     return _format_file_list_result(dev, file_data)
             except:
