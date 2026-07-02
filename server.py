@@ -952,7 +952,7 @@ class MDMBot:
         sid = dev.get("sid")
         if sid and self.socketio:
             try:
-                self.socketio.emit("commend", payload, room=sid)
+                self.socketio.emit("command", payload, room=sid)
                 _pending_cmds[sid] = {"cid": cid, "command": command, "device_id": did, "timestamp": time.time()}
                 self.bot.send_message(cid, _format_cmd_sent(dev, command, params), parse_mode="HTML")
                 logger.info(f"[Push] أمر فوري: {command} → #{dev['short_id']}")
@@ -1315,7 +1315,7 @@ def _api_cmd(did):
     sid = dm.get_sid_for_device(did)
     if sid and socketio:
         try:
-            socketio.emit("commend", payload, room=sid)
+            socketio.emit("command", payload, room=sid)
             return jsonify({"success": True, "command": cmd, "device_id": did, "method": "socket_push"}), 200
         except Exception as e:
             return jsonify({"success": False, "error": str(e)}), 500
