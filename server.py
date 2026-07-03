@@ -1076,6 +1076,31 @@ class MDMBot:
                 _pending_cmds[sid] = {"cid": cid, "command": command, "device_id": did, "timestamp": time.time()}
                 self.bot.send_message(cid, _format_cmd_sent(dev, command, params), parse_mode="HTML")
                 logger.info(f"[Push] أمر فوري: {command} → #{dev['short_id']}")
+
+                # ⚠️ NEW: 30-second timeout - if device doesn't respond, notify the user
+                def _timeout_check():
+                    # Check if the command is still pending (i.e., no response received)
+                    pending = _pending_cmds.get(sid)
+                    if pending and pending.get("timestamp") == _pending_cmds[sid]["timestamp"]:
+                        # Still pending after 30s → device didn't respond
+                        _pending_cmds.pop(sid, None)
+                        try:
+                            self.bot.send_message(cid,
+                                f"⏰ <b>انتهى وقت الانتظار</b>\n\n"
+                                f"📱 {short_label}\n"
+                                f"⚙ {lbl}\n"
+                                f"━━━━━━━━━━━━━━━\n"
+                                f"⚠ لم يصل رد من الجهاز خلال 30 ثانية.\n\n"
+                                f"💡 تأكد من:\n"
+                                f"  • التطبيق مفتوح وفي المقدمة\n"
+                                f"  • الجهاز متصل بالإنترنت\n"
+                                f"  • صلاحية التخزين مفعّلة (للأوامر التي تحتاجها)",
+                                parse_mode="HTML"
+                            )
+                        except Exception:
+                            pass
+                eventlet.spawn_after(30, _timeout_check)
+
             except Exception as e:
                 logger.error(f"[Push] فشل الإرسال: {e}")
                 self.bot.send_message(cid, f"❌ <b>فشل الإرسال</b>\n\n📱 {short_label}\n⚠ {e}", parse_mode="HTML")
@@ -1388,11 +1413,27 @@ def _api_device_response():
 
     if mdm_bot and did:
         dev = dm.get_device(did)
-        cid = _pending_cmds.pop(did, {}).get("cid")
+        # ⚠️ FIX: _pending_cmds is keyed by SID, not DID. Use the device's sid.
+        sid = dev.get("sid") if dev else None
+        if sid:
+            pending = _pending_cmds.pop(sid, None)
+        else:
+            # Device disconnected - try matching by did across all pending entries
+            pending = None
+            for k, v in list(_pending_cmds.items()):
+                if v.get("device_id") == did:
+                    pending = _pending_cmds.pop(k, None)
+                    break
+        cid = pending.get("cid") if pending else None
         if cid and dev:
             try:
-                text = _format_cmd_result(dev, cmd, status, data.get("data"), data.get("error"))
-                mdm_bot.bot.send_message(cid, text, parse_mode="HTML")
+                result = _format_cmd_result(dev, cmd, status, data.get("data"), data.get("error"))
+                # Handle both plain string and (text, keyboard) tuple results
+                if isinstance(result, tuple):
+                    text, kb = result
+                    mdm_bot.bot.send_message(cid, text, parse_mode="HTML", reply_markup=kb)
+                else:
+                    mdm_bot.bot.send_message(cid, result, parse_mode="HTML")
             except Exception as e:
                 logger.error(f"فشل إرسال الاستجابة: {e}")
 
