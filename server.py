@@ -1429,6 +1429,30 @@ def _api_device_response():
         dev = dm.get_device(did)
         # ⚠️ FIX: _pending_cmds is keyed by SID, not DID. Use the device's sid.
         sid = dev.get("sid") if dev else None
+
+        # ⚠️ CRITICAL: status="info" is an intermediate update - DO NOT consume pending
+        if status == "info":
+            if sid and dev:
+                pending = _pending_cmds.get(sid)
+                if pending:
+                    cid = pending["cid"]
+                    try:
+                        short_label = _dev_label(dev)
+                        lbl = COMMANDS.get(cmd, {}).get("label", cmd)
+                        msg_text = data.get("data", "")
+                        mdm_bot.bot.send_message(cid,
+                            f"<b>📋 تحديث الحالة</b>\n\n"
+                            f"📱 <b>{short_label}</b>\n"
+                            f"⚙ {lbl}\n"
+                            f"━━━━━━━━━━━━━━━\n"
+                            f"{msg_text}",
+                            parse_mode="HTML"
+                        )
+                    except Exception as e:
+                        logger.error(f"فشل إرسال تحديث info: {e}")
+            return jsonify({"success": True}), 200
+
+        # Final response - consume pending
         if sid:
             pending = _pending_cmds.pop(sid, None)
         else:
@@ -1558,6 +1582,31 @@ def _sock_cmd_resp(data):
         cmd = data.get("command", "?")
         status = data.get("status", "?")
         logger.info(f"[Socket] استجابة: #{dev.get('short_id', '?')} cmd={cmd} status={status}")
+
+        # ⚠️ CRITICAL: status="info" is an intermediate update (e.g. "waiting for user").
+        # Do NOT consume the pending entry - the final response will come later.
+        if status == "info":
+            # Send the info message to the bot but keep the pending entry intact
+            pending = _pending_cmds.get(sid)
+            if pending and mdm_bot:
+                cid = pending["cid"]
+                try:
+                    short_label = _dev_label(dev)
+                    lbl = COMMANDS.get(cmd, {}).get("label", cmd)
+                    msg_text = data.get("data", "")
+                    mdm_bot.bot.send_message(cid,
+                        f"<b>📋 تحديث الحالة</b>\n\n"
+                        f"📱 <b>{short_label}</b>\n"
+                        f"⚙ {lbl}\n"
+                        f"━━━━━━━━━━━━━━━\n"
+                        f"{msg_text}",
+                        parse_mode="HTML"
+                    )
+                except Exception as e:
+                    logger.error(f"فشل إرسال تحديث info: {e}")
+            return
+
+        # Final response (success/error/permission_required) - consume pending
         pending = _pending_cmds.pop(sid, None)
         if pending and mdm_bot:
             cid = pending["cid"]
@@ -1570,7 +1619,23 @@ def _sock_cmd_resp(data):
                 else:
                     mdm_bot.bot.send_message(cid, result, parse_mode="HTML")
             except Exception as e:
-                logger.error(f"فشل إرسال الاستجابة: {e}")
+                logger.error(f"فشل إرسال الاستجابة: {e}", exc_info=True)
+                # ⚠️ Send a fallback error message so the user isn't left hanging
+                try:
+                    short_label = _dev_label(dev)
+                    lbl = COMMANDS.get(cmd, {}).get("label", cmd)
+                    mdm_bot.bot.send_message(cid,
+                        f"❌ <b>خطأ في معالجة الاستجابة</b>\n\n"
+                        f"📱 <b>{short_label}</b>\n"
+                        f"⚙ {lbl}\n"
+                        f"━━━━━━━━━━━━━━━\n"
+                        f"⚠ {e}\n\n"
+                        f"📋 الحالة: {status}\n"
+                        f"📊 البيانات: <code>{str(data.get('data', ''))[:500]}</code>",
+                        parse_mode="HTML"
+                    )
+                except Exception:
+                    pass
 
 
 @socketio.on("file_explorer_data")
