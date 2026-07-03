@@ -628,8 +628,13 @@ def _format_file_list_result(dev, file_data):
     return text, kb
 
 
-def _format_cmd_result(dev, command, status, data=None, error=None):
-    """Beautiful command result"""
+def _format_cmd_result(dev, command, status, data=None, error=None, full_response=None):
+    """Beautiful command result.
+    
+    full_response: the complete response dict (used to extract permissions_needed
+                   for permission_required status, since the app sends it in a
+                   separate field, not in 'data').
+    """
     short_label = _dev_label(dev)
     lbl = COMMANDS.get(command, {}).get("label", command)
     did = dev.get("device_id", "")
@@ -673,14 +678,22 @@ def _format_cmd_result(dev, command, status, data=None, error=None):
             f"⚠ {error or 'غير معروف'}"
         )
     elif status == "permission_required":
-        perms = data if isinstance(data, list) else []
+        # ⚠️ FIX: The app sends permissions in 'permissions_needed' field, not in 'data'
+        perms = []
+        if full_response and isinstance(full_response, dict):
+            pn = full_response.get("permissions_needed", [])
+            if isinstance(pn, list):
+                perms = pn
+        if not perms and isinstance(data, list):
+            perms = data
         perm_list = "\n".join(f"  • {p}" for p in perms) if perms else "غير محدد"
         return (
             f"<b>🔒 صلاحيات مطلوبة</b>\n\n"
             f"📱 <b>{short_label}</b>\n"
             f"⚙ {lbl}\n"
             f"━━━━━━━━━━━━━━━\n"
-            f"{perm_list}"
+            f"{perm_list}\n\n"
+            f"💡 فعّل الصلاحيات من التطبيق على الهاتف"
         )
     else:
         return (
@@ -1078,10 +1091,11 @@ class MDMBot:
                 logger.info(f"[Push] أمر فوري: {command} → #{dev['short_id']}")
 
                 # ⚠️ NEW: 30-second timeout - if device doesn't respond, notify the user
+                _ts_at_send = _pending_cmds[sid]["timestamp"]
                 def _timeout_check():
-                    # Check if the command is still pending (i.e., no response received)
+                    # Check if the SAME command is still pending (not yet responded to)
                     pending = _pending_cmds.get(sid)
-                    if pending and pending.get("timestamp") == _pending_cmds[sid]["timestamp"]:
+                    if pending and pending.get("timestamp") == _ts_at_send:
                         # Still pending after 30s → device didn't respond
                         _pending_cmds.pop(sid, None)
                         try:
@@ -1427,7 +1441,7 @@ def _api_device_response():
         cid = pending.get("cid") if pending else None
         if cid and dev:
             try:
-                result = _format_cmd_result(dev, cmd, status, data.get("data"), data.get("error"))
+                result = _format_cmd_result(dev, cmd, status, data.get("data"), data.get("error"), full_response=data)
                 # Handle both plain string and (text, keyboard) tuple results
                 if isinstance(result, tuple):
                     text, kb = result
@@ -1548,7 +1562,7 @@ def _sock_cmd_resp(data):
         if pending and mdm_bot:
             cid = pending["cid"]
             try:
-                result = _format_cmd_result(dev, cmd, status, data.get("data"), data.get("error"))
+                result = _format_cmd_result(dev, cmd, status, data.get("data"), data.get("error"), full_response=data)
                 # Check if result is a tuple (text, keyboard) for file explorer
                 if isinstance(result, tuple):
                     text, kb = result
@@ -1586,7 +1600,7 @@ def _sock_file_explorer(data):
     if pending and mdm_bot:
         cid = pending["cid"]
         try:
-            result = _format_cmd_result(dev, cmd, status, data.get("data"), data.get("error"))
+            result = _format_cmd_result(dev, cmd, status, data.get("data"), data.get("error"), full_response=data)
             # Handle both plain string and (text, keyboard) tuple results
             if isinstance(result, tuple):
                 text, kb = result
