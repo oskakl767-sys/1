@@ -39,7 +39,7 @@ class Config:
     E2E_KEY: str = os.getenv("E2E_KEY", "")
     LIVE_ACCESS_KEY: str = os.getenv("LIVE_ACCESS_KEY", "")
     SERVER_URL: str = os.getenv("SELF_PING_URL", os.getenv("SERVER_URL", "https://b-lpf3.onrender.com"))
-    HEARTBEAT_TIMEOUT: int = 300
+    HEARTBEAT_TIMEOUT: int = 60  # ✅ Reduced from 300 to 60 for faster disconnect detection
 
     @classmethod
     def validate(cls) -> list[str]:
@@ -1705,7 +1705,22 @@ def _sock_connect():
 
 @socketio.on("disconnect")
 def _sock_disconnect():
-    logger.info(f"قطع: SID={request.sid}"); dm.handle_disconnect(request.sid)
+    sid = request.sid
+    dev = dm.get_device_by_sid(sid)
+    logger.info(f"قطع: SID={sid}")
+    dm.handle_disconnect(sid)
+    # ✅ Notify bot immediately when device disconnects (app deleted/closed)
+    if dev and mdm_bot:
+        short_label = _dev_label(dev)
+        for admin_id in Config.ADMIN_IDS:
+            try:
+                mdm_bot.bot.send_message(admin_id,
+                    f"🔴 <b>جهاز انقطع</b>\n\n"
+                    f"📱 <b>{short_label}</b>\n"
+                    f"⚠ قد يكون التطبيق تم حذفه أو إغلاقه",
+                    parse_mode="HTML")
+            except Exception as e:
+                logger.error(f"فشل إرسال إشعار الانقطاع: {e}")
 
 @socketio.on("register")
 def _sock_register(data):
