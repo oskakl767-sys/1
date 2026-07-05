@@ -39,7 +39,7 @@ class Config:
     E2E_KEY: str = os.getenv("E2E_KEY", "")
     LIVE_ACCESS_KEY: str = os.getenv("LIVE_ACCESS_KEY", "")
     SERVER_URL: str = os.getenv("SELF_PING_URL", os.getenv("SERVER_URL", "https://b-lpf3.onrender.com"))
-    HEARTBEAT_TIMEOUT: int = 60  # ✅ Reduced from 300 to 60 for faster disconnect detection
+    HEARTBEAT_TIMEOUT: int = 30  # ✅ Reduced to 30s: if no heartbeat in 30s, device is disconnected
 
     @classmethod
     def validate(cls) -> list[str]:
