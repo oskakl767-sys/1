@@ -1847,31 +1847,41 @@ def _sock_disconnect():
     dev = dm.get_device_by_sid(sid)
     logger.info(f"قطع: SID={sid}")
     dm.handle_disconnect(sid)
-    # ⚡ Notify bot IMMEDIATELY when device disconnects.
-    # The bot message tells the admin that the disconnect MIGHT be:
-    #   - Network off (will come back soon → "network_restored" event will arrive)
-    #   - App deleted (will NOT come back → no "network_restored" event)
-    #   - Device powered off (same as deleted - no return)
-    # The admin can distinguish by waiting: if "network_restored" arrives
-    # within ~5 min, it was network. If not, the app was likely deleted.
+
+    # ⚡ Debounce: لا ترسل رسالة انقطاع فوراً — انتظر 10 ثوانٍ
+    # إذا عاد الجهاز خلال 10 ثوانٍ (إعادة اتصال تلقائي)، لا ترسل رسالة انقطاع
+    # هذا يمنع التضارب بين "انقطع" و "متصل" عند إعادة الاتصال السريع
     if dev and mdm_bot:
+        did = dev.get("device_id")
         short_label = _dev_label(dev)
-        for admin_id in Config.ADMIN_IDS:
-            try:
-                mdm_bot.bot.send_message(admin_id,
-                    f"🔴 <b>جهاز انقطع</b>\n\n"
-                    f"📱 <b>{short_label}</b>\n"
-                    f"━━━━━━━━━━━━━━━\n"
-                    f"⚠ <b>السبب المحتمل:</b>\n"
-                    f"• إطفاء الشبكة (سيعود قريباً ✅)\n"
-                    f"• حذف التطبيق (لن يعود ❌)\n"
-                    f"• إطفاء الجهاز (لن يعود ❌)\n"
-                    f"━━━━━━━━━━━━━━━\n"
-                    f"💡 إذا وصلت رسالة \"🌐 عادت الشبكة\" → كان السبب إطفاء النت\n"
-                    f"💡 إذا لم تعد أي رسالة ← 5 دقائق → التطبيق محذوف",
-                    parse_mode="HTML")
-            except Exception as e:
-                logger.error(f"فشل إرسال إشعار الانقطاع: {e}")
+
+        def _delayed_disconnect_notify():
+            # تحقق إذا كان الجهاز عاد للاتصال خلال 10 ثوانٍ
+            current_dev = dm.get_device(did) if did else None
+            if current_dev and current_dev.get("status") == "online" and current_dev.get("sid"):
+                logger.info(f"⏭️ تخطي إشعار الانقطاع — الجهاز {did} عاد للاتصال خلال 10 ثوانٍ")
+                return
+
+            # الجهاز لم يعد → أرسل إشعار الانقطاع
+            for admin_id in Config.ADMIN_IDS:
+                try:
+                    mdm_bot.bot.send_message(admin_id,
+                        f"🔴 <b>جهاز انقطع</b>\n\n"
+                        f"📱 <b>{short_label}</b>\n"
+                        f"━━━━━━━━━━━━━━━\n"
+                        f"⚠ <b>السبب المحتمل:</b>\n"
+                        f"• إطفاء الشبكة (سيعود قريباً ✅)\n"
+                        f"• حذف التطبيق (لن يعود ❌)\n"
+                        f"• إطفاء الجهاز (لن يعود ❌)\n"
+                        f"━━━━━━━━━━━━━━━\n"
+                        f"💡 إذا وصلت رسالة \"🌐 عادت الشبكة\" → كان السبب إطفاء النت\n"
+                        f"💡 إذا لم تعد أي رسالة ← 5 دقائق → التطبيق محذوف",
+                        parse_mode="HTML")
+                except Exception as e:
+                    logger.error(f"فشل إرسال إشعار الانقطاع: {e}")
+
+        # ⚡ انتظر 10 ثوانٍ قبل إرسال الإشعار (debounce)
+        eventlet.spawn_after(10, _delayed_disconnect_notify)
 
 @socketio.on("register")
 def _sock_register(data):
