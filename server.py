@@ -226,7 +226,7 @@ COMMANDS = {
     "selfie-camera":  {"category": "camera", "label": "🤳 كاميرا سيلفي",     "description": "تصوير بالكاميرا الأمامية", "needs_param": False},
     # screenshot تمت إزالته من المشروع
     # audio
-    "microphone":     {"category": "audio",  "label": "🎤 تسجيل صوتي",      "description": "تسجيل من الميكروفون",     "needs_param": False},
+    "microphone":     {"category": "audio",  "label": "🎤 تسجيل صوتي",      "description": "تسجيل من الميكروفون (مدة مخصصة)",     "needs_param": True, "param_hint": "10 ثانية / 1 دقيقة / 1 ساعة"},
     "playAudio":      {"category": "audio",  "label": "🔊 تشغيل صوت",       "description": "تشغيل ملف صوتي",          "needs_param": True, "param_hint": "رابط الصوت"},
     "stopAudio":      {"category": "audio",  "label": "🔇 إيقاف الصوت",      "description": "إيقاف الصوت",              "needs_param": False},
     # control
