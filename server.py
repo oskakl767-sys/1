@@ -1396,7 +1396,7 @@ app.config["SECRET_KEY"] = Config.SECRET_KEY or Config.E2E_KEY
 
 # Socket.IO with EIO v3 compatibility
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet",
-                    ping_timeout=60, ping_interval=25)
+                    ping_timeout=5, ping_interval=5)
 
 # ── EIO v3 Compatibility Middleware ──
 _original_wsgi_app = app.wsgi_app
