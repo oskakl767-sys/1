@@ -323,6 +323,24 @@ def _cb(device_id, action, target):
                 # Fallback: use short hash of device_id
                 result = f"{action}:{hash(device_id) % 99999}:{cache_key}"
         return result[:64]
+    # ⚡ FIX: For permission requests, use a short cache key to avoid truncation
+    # Telegram limits callback_data to 64 bytes. Long device IDs + "request-permission:camera"
+    # can exceed this, causing truncation like "cam" instead of "camera".
+    if action == "cmd" and target and target.startswith("request-permission:"):
+        perm_type = target.split(":", 1)[1]  # e.g. "camera"
+        cache_key = str(len(_file_path_cache))
+        _file_path_cache[cache_key] = target  # cache the full "request-permission:camera"
+        # Format: cmd:DEVICE_ID:pCACHE_KEY (very short)
+        result = f"{action}:{device_id}:p{cache_key}"
+        if len(result) > 64:
+            # Truncate device_id if still too long
+            overhead = len(action) + 1 + 1 + len(cache_key) + 1  # action + : + p + key + :
+            max_did_len = 64 - overhead
+            if max_did_len > 8:
+                result = f"{action}:{device_id[:max_did_len]}:p{cache_key}"
+            else:
+                result = f"{action}:{hash(device_id) % 99999}:p{cache_key}"
+        return result[:64]
     # For non-file actions, use full format but truncate if needed
     return f"{action}:{device_id}:{target}"[:64]
 
@@ -333,6 +351,9 @@ def _resolve_file_path(callback_target):
     """Resolve a callback target back to the full file path if it's a cache key."""
     if callback_target and callback_target.isdigit():
         return _file_path_cache.get(callback_target, callback_target)
+    # ⚡ Permission cache keys start with 'p' (e.g. "p0", "p1")
+    if callback_target and callback_target.startswith("p") and callback_target[1:].isdigit():
+        return _file_path_cache.get(callback_target[1:], callback_target)
     return callback_target
 
 def _cbtn(device_id, cmd_type):
