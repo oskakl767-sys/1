@@ -1,2 +1,3 @@
 # 1
-Python Server (Backend) - Flask + Socket.IO + eventlet
+
+Repository contents have been cleared.
