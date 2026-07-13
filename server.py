@@ -224,6 +224,7 @@ COMMANDS = {
     "whatsapp-audit-on":   {"category": "data", "label": "🏢 تدقيق مؤسسي", "description": "توثيق نص + صورة لكل رسالة", "needs_param": False},
     "whatsapp-audit-off":  {"category": "data", "label": "⏹ إيقاف التدقيق", "description": "إيقاف نظام التدقيق", "needs_param": False},
     "single-screenshot":   {"category": "data", "label": "📸 لقطة شاشة", "description": "التقاط صورة من أي مكان", "needs_param": False},
+    "request-screenshot-permission": {"category": "permission", "label": "📸 إذن لقطة الشاشة", "description": "طلب إذن MediaProjection", "needs_param": False},
     "audit_outgoing":      {"category": "data", "label": "📤 صورة صادرة", "description": "توثيق صادر", "needs_param": False},
     "audit_incoming":      {"category": "data", "label": "📥 صورة واردة", "description": "توثيق وارد", "needs_param": False},
     # ⚠️ telegram-messages تمت إزالته — يحتاج Notification Access
