@@ -483,6 +483,10 @@ def permissions_keyboard(did):
            perm_btn("calls", "📞 المكالمات"))
     kb.add(perm_btn("notifications", "🔔 الإشعارات"),
            perm_btn("phone-state", "📱 حالة الهاتف"))
+    kb.add(InlineKeyboardButton(
+        "📸 إذن لقطة الشاشة",
+        callback_data=_cb(did, "cmd", "request-screenshot-permission")
+    ))
     kb.add(_back(did))
     return kb
 
