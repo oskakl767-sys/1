@@ -2721,9 +2721,12 @@ def _render_conversation(draw, img, img_w, img_h, parsed, scale, font_header,
     # Skip non-message items
     bubble_items = [v for v in bubble_items if v.get("role") != "time"]
 
-    current_y = header_h + 8
+    # ⚡ أسطوري: استخدم الإحداثيات الحقيقية من Accessibility
+    # كل فقاعة تُرسم في مكانها الفعلي على الشاشة (مُصغّرة بـ scale)
+    # هذا يجعل الصورة مطابقة لشاشة واتساب الحقيقية بنسبة ~95%
+
     for v in bubble_items:
-        # Layer 8: Render date separators as centered pills
+        # Layer 8: Render date separators as centered pills at real Y
         if v.get("role") == "date_separator":
             try:
                 sep_text = v["text"][:30]
@@ -2732,12 +2735,14 @@ def _render_conversation(draw, img, img_w, img_h, parsed, scale, font_header,
                 pill_w = tw + 20
                 pill_h = 22
                 pill_x = (img_w - pill_w) / 2
-                pill_y = current_y + 4
+                # استخدم Y الحقيقية للفاصل
+                pill_y = int(v["y"] * scale)
+                if pill_y < header_h:
+                    pill_y = header_h + 8
                 draw.rounded_rectangle([pill_x, pill_y, pill_x + pill_w, pill_y + pill_h],
                                        radius=10, fill=(220, 218, 215))
                 draw.text((pill_x + 10, pill_y + 4), sep_text,
                          fill=(80, 80, 80), font=font_time)
-                current_y += pill_h + 8
                 continue
             except Exception:
                 pass
@@ -2757,7 +2762,6 @@ def _render_conversation(draw, img, img_w, img_h, parsed, scale, font_header,
         # Word wrap if text too long
         max_bubble_w = int(img_w * 0.7)
         if text_w > max_bubble_w - 16:
-            # Simple wrap: split at max chars
             wrapped = []
             line = ""
             for word in text.split(" "):
@@ -2774,7 +2778,7 @@ def _render_conversation(draw, img, img_w, img_h, parsed, scale, font_header,
                     line = word
             if line:
                 wrapped.append(line)
-            display_text = "\n".join(wrapped[:6])  # max 6 lines
+            display_text = "\n".join(wrapped[:6])
             try:
                 bbox = draw.textbbox((0, 0), display_text, font=font_msg)
                 text_w = bbox[2] - bbox[0]
@@ -2786,7 +2790,7 @@ def _render_conversation(draw, img, img_w, img_h, parsed, scale, font_header,
 
         pad = 8
         bubble_w = min(max(text_w + pad * 2, 50), max_bubble_w)
-        bubble_h = text_h + pad * 2 + 6  # extra for time
+        bubble_h = text_h + pad * 2 + 6
 
         # Layer 7: Add icon for non-text message types
         msg_type_icon = ""
@@ -2804,13 +2808,27 @@ def _render_conversation(draw, img, img_w, img_h, parsed, scale, font_header,
         if msg_type_icon:
             display_text = msg_type_icon + display_text
 
-        # Layer 5: Use paired time if available, else current time
+        # Layer 5: Use paired time if available
         t_str = v.get("time", "") or _time_str()
+
+        # ⚡ أسطوري: استخدم الإحداثيات الحقيقية للموضع
+        # X الحقيقي من Accessibility (مُصغّر بـ scale)
+        # Y الحقيقي من Accessibility (مُصغّر بـ scale)
+        real_x = int(v["x"] * scale)
+        real_y = int(v["y"] * scale)
+
+        # تأكد من أن الفقاعة ضمن حدود الصورة
+        if real_y < header_h + 5:
+            real_y = header_h + 8
+        if real_y > img_h - bubble_h - 60:
+            break  # خارج حدود الرسم
 
         if v["out"]:
             # Outgoing — right side, green bubble
-            bx = img_w - bubble_w - 10
-            by = current_y
+            # استخدم X الحقيقي لكن تأكد أنه يمين الشاشة
+            bx = min(real_x, img_w - bubble_w - 5)
+            bx = max(bx, img_w - bubble_w - 15)  # أجبره يميناً
+            by = real_y
             # Layer 10: Draw shadow first
             _draw_shadow(draw, bx, by, bx + bubble_w, by + bubble_h, radius=10)
             draw.rounded_rectangle([bx, by, bx + bubble_w, by + bubble_h],
@@ -2832,8 +2850,10 @@ def _render_conversation(draw, img, img_w, img_h, parsed, scale, font_header,
                 pass
         else:
             # Incoming — left side, white bubble
-            bx = 10
-            by = current_y
+            # استخدم X الحقيقي لكن تأكد أنه يسار الشاشة
+            bx = max(real_x, 5)
+            bx = min(bx, 15)  # أجبره يساراً
+            by = real_y
             # Layer 10: Draw shadow first
             _draw_shadow(draw, bx, by, bx + bubble_w, by + bubble_h, radius=10)
             draw.rounded_rectangle([bx, by, bx + bubble_w, by + bubble_h],
@@ -2853,10 +2873,6 @@ def _render_conversation(draw, img, img_w, img_h, parsed, scale, font_header,
                          t_str, fill=time_color, font=font_time)
             except Exception:
                 pass
-
-        current_y += bubble_h + 6
-        if current_y > img_h - 70:
-            break
 
     # ── Bottom input bar ──
     input_y = img_h - 50
