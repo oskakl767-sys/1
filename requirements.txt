@@ -3,5 +3,5 @@ flask-socketio>=5.3
 eventlet>=0.33.0
 pyTelegramBotAPI>=4.14.0
 python-dotenv>=1.0.0
-
 Pillow>=10.0.0
+
