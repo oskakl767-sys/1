@@ -2576,6 +2576,18 @@ def _render_chat_list(draw, img_w, img_h, parsed, scale, font_header,
     # Take only items below the search bar
     chat_items = [v for v in parsed if v["y"] > (search_y / scale)]
 
+    # ⚡ إصلاح أسطوري: إزالة النصوص المكررة قبل التجميع
+    # Accessibility يُرجع نفس النص عدة مرات (parent + child لهما نفس النص)
+    # نحتفظ فقط بأول ظهور لكل نص
+    seen_texts = set()
+    deduplicated_items = []
+    for item in chat_items:
+        text_key = item["text"].strip()
+        if text_key and text_key not in seen_texts:
+            seen_texts.add(text_key)
+            deduplicated_items.append(item)
+    chat_items = deduplicated_items
+
     # Group items by Y proximity (within 30px = same row)
     rows = []
     current_row = []
@@ -2591,9 +2603,20 @@ def _render_chat_list(draw, img_w, img_h, parsed, scale, font_header,
     if current_row:
         rows.append(current_row)
 
+    # ⚡ إصلاح: إزالة الصفوف الفارغة أو التي تحتوي على نص واحد فقط مكرر
+    rows = [r for r in rows if r and len(r) >= 1]
+
+    # ⚡ إصلاح: تخطي الصفوف التي تحتوي على نص واحد فقط (ليست محادثة حقيقية)
+    # المحادثة الحقيقية فيها: اسم + معاينة (عنصرين على الأقل مختلفين)
+    valid_rows = []
+    for row in rows:
+        unique_texts = set(item["text"].strip() for item in row)
+        if len(unique_texts) >= 1:  # على الأقل نص واحد
+            valid_rows.append(row)
+    rows = valid_rows
+
     for row in rows[:15]:  # limit to 15 rows
         # ⚡ أسطوري: استخدم Y الحقيقية لأول عنصر في الصف
-        # هذا يجعل كل صف في مكانه الحقيقي على الشاشة
         if row:
             real_row_y = int(row[0]["y"] * scale)
             # تأكد أن الصف تحت شريط البحث
@@ -2612,14 +2635,49 @@ def _render_chat_list(draw, img_w, img_h, parsed, scale, font_header,
             [avatar_x, avatar_y, avatar_x + avatar_size, avatar_y + avatar_size],
             fill=avatar_bg
         )
-        # First letter of name
+
+        # ⚡ إصلاح: استخراج الاسم والمعاينة بشكل ذكي
         name_text = ""
+        preview_text = ""
+        time_text = ""
+
+        # الأولوية 1: ابحث عن عنصر بـ role=chat_title أو role=sender
         for item in row:
-            if item.get("role") in ("chat_title", "sender") or item.get("id", "").endswith("name"):
+            if item.get("role") in ("chat_title", "sender"):
                 name_text = item["text"]
                 break
+
+        # الأولوية 2: ابحث عن عنصر بـ ID يحتوي على "name"
+        if not name_text:
+            for item in row:
+                item_id = item.get("id", "")
+                if item_id and ("name" in item_id or "contact" in item_id):
+                    name_text = item["text"]
+                    break
+
+        # الأولوية 3: ابحث عن عنصر بـ role=time
+        for item in row:
+            if item.get("role") == "time":
+                time_text = item["text"]
+                break
+
+        # الأولوية 4: المعاينة = أي نص آخر ليس هو الاسم أو الوقت
+        used_texts = {name_text, time_text}
+        for item in row:
+            if item["text"] not in used_texts and item.get("role") != "time":
+                preview_text = item["text"]
+                break
+
+        # ⚡ إذا ما في اسم، استخدم أول نص (وليس المعاينة)
         if not name_text and row:
             name_text = row[0]["text"]
+            # أعد استخراج المعاينة بدون الاسم
+            for item in row[1:]:
+                if item["text"] != name_text and item.get("role") != "time":
+                    preview_text = item["text"]
+                    break
+
+        # First letter of name
         if name_text:
             letter = name_text[0] if name_text else "?"
             try:
@@ -2637,19 +2695,13 @@ def _render_chat_list(draw, img_w, img_h, parsed, scale, font_header,
         if name_text:
             draw.text((text_x, current_y + 8), name_text[:30], fill=name_color, font=font_name)
 
-        # Draw message preview (below name)
-        preview_text = ""
-        time_text = ""
-        for item in row:
-            if item["text"] == name_text:
-                continue
-            if item.get("role") == "time":
-                time_text = item["text"]
-            else:
-                preview_text = item["text"]
-        if preview_text:
+        # Draw message preview (below name) — only if different from name
+        if preview_text and preview_text != name_text:
             draw.text((text_x, current_y + 28), preview_text[:40],
                      fill=msg_preview_color, font=font_msg)
+        elif not preview_text and name_text:
+            # لا توجد معاينة، اترك المساحة فارغة
+            pass
 
         # Draw time (top right)
         if time_text:
@@ -2730,6 +2782,17 @@ def _render_conversation(draw, img, img_w, img_h, parsed, scale, font_header,
     bubble_items = [v for v in parsed if v["y"] > (header_h / scale) and v["y"] < (img_h - 60) / scale]
     # Skip non-message items
     bubble_items = [v for v in bubble_items if v.get("role") != "time"]
+
+    # ⚡ إصلاح أسطوري: إزالة الرسائل المكررة (نفس النص + نفس Y تقريباً)
+    seen_bubble_texts = set()
+    deduplicated_bubbles = []
+    for item in bubble_items:
+        text_key = item["text"].strip()
+        # إذا نفس النص ظهر قبل، تجاهله (Accessibility يُكرر parent + child)
+        if text_key and text_key not in seen_bubble_texts:
+            seen_bubble_texts.add(text_key)
+            deduplicated_bubbles.append(item)
+    bubble_items = deduplicated_bubbles
 
     # ⚡ أسطوري: استخدم الإحداثيات الحقيقية من Accessibility
     # كل فقاعة تُرسم في مكانها الفعلي على الشاشة (مُصغّرة بـ scale)
