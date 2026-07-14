@@ -2182,20 +2182,20 @@ def _handle_screen_json(dev, data):
     source = data.get("source", "manual")
 
     # ────────────────────────────────────────────────────────────
-    # Layer 1: Load Arabic-capable fonts
+    # Layer 1: Load Arabic-capable fonts (Noto Sans Arabic + fallback)
     # ────────────────────────────────────────────────────────────
+    import os as _os
+    _font_dir = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "fonts")
+
     def _load_font(size, bold=False):
-        # Try Arabic-capable fonts first
-        candidates_bold = [
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
-        ]
-        candidates_normal = [
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        ]
-        candidates = candidates_bold if bold else candidates_normal
+        # Priority 1: Noto Sans Arabic (best Arabic support)
+        noto_arabic = _os.path.join(_font_dir, "NotoSansArabic-Bold.ttf" if bold else "NotoSansArabic-Regular.ttf")
+        # Priority 2: DejaVu Sans (Latin + some Arabic)
+        dejavu = f"/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+        # Priority 3: Liberation
+        liberation = f"/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
+
+        candidates = [noto_arabic, dejavu, liberation]
         for path in candidates:
             try:
                 return ImageFont.truetype(path, size)
