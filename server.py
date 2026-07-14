@@ -2256,13 +2256,21 @@ def _handle_screen_json(dev, data):
 
     # ────────────────────────────────────────────────────────────
     # Layer 2: Filter out buttons, tabs, and non-message elements
+    # ⚡ أسطوري: قائمة موسّعة للنصوص الداخلية التي يجب تجاهلها
     # ────────────────────────────────────────────────────────────
-    # Texts to ignore (buttons, tabs, UI elements)
     ignore_texts = {
-        "Chats", "Status", "Calls", "Settings",
-        "مكالمات", "الحالات", "الإعدادات", "المحادثات",
+        # تبويبات واتساب
+        "Chats", "Status", "Calls", "Settings", "Groups", "Updates",
+        "مكالمات", "الحالات", "الإعدادات", "المحادثات", "المجموعات", "التحديثات",
+        # شريط الإدخال
         "Send", "ارسال", "Type a message", "اكتب رسالة",
+        "Message", "رسالة",
+        # شريط البحث
         "Search", "بحث", "ابحث",
+        "ابحث عن رسالة أو جهة اتصال",
+        "ابحث أو ابدأ محادثة جديدة",
+        "ابحث في Meta AI",
+        # الأزرار
         "Camera", "كاميرا",
         "New group", "مجموعة جديدة",
         "New broadcast", "بث جديد",
@@ -2270,6 +2278,55 @@ def _handle_screen_json(dev, data):
         "Starred messages", "الرسائل المميزة",
         "Menu", "القائمة",
         "More options", "المزيد من الخيارات",
+        "More", "المزيد",
+        # نصوص واتساب الداخلية (إشعارات النظام)
+        "محادثة", "هل تريد إضافة",
+        "الرسائل والمجموعات التي تمت مشاركتها",
+        "تمت مشاركة الرسائل والمجموعات معك",
+        "الرسائل التي يتم إرسالها إلى هذا المحادثة",
+        "سيتم حذفها من جهازك",
+        "المحادثات المقفلة مؤقتاً",
+        "Tap to unlock", "اضغط للفتح",
+        "Type a message", "اكتب رسالة",
+        "Online", "متصل الآن", "online",
+        "typing...", "يكتب...",
+        # نصوص Meta AI
+        "Meta AI", "Ask Meta AI", "اسأل Meta AI",
+        # نصوص التبويبات السفلية
+        "Chats", "Groups", "Status", "Calls", "Updates",
+        "المحادثات", "المجموعات", "الحالات", "المكالمات", "التحديثات",
+    }
+
+    # ⚡ أسطوري: قالب مرجعي ثابت لقائمة المحادثات (مطابق للصورة المرجعية)
+    CHAT_LIST_TEMPLATE = {
+        "header": {
+            "title": "WhatsApp",  # أو "واتساب"
+            "color": (7, 94, 84),  # #075E54 أخضر واتساب الغامق
+            "icons_left": "📷",     # أيقونة الكاميرا
+            "icons_right": ["🔍", "⋮"]  # بحث + قائمة
+        },
+        "search": {
+            "placeholder": "ابحث أو ابدأ محادثة جديدة",
+            "color": (242, 242, 242),  # رمادي فاتح
+            "icon": "🔍"
+        },
+        "row_height": 60,
+        "avatar_size": 40,
+        "bottom_tabs": [
+            ("💬", "المحادثات", True),    # نشط
+            ("👥", "المجموعات", False),
+            ("📷", "الحالات", False),
+            ("📞", "المكالمات", False),
+        ]
+    }
+
+    # ⚡ أسطوري: قالب مرجعي لمحادثة مفتوحة
+    CONVERSATION_TEMPLATE = {
+        "header_color": (7, 94, 84),
+        "bg_color": (236, 229, 221),  # #ECE5DD
+        "bubble_out_color": (210, 248, 192),  # #DCF8C6
+        "bubble_in_color": (255, 255, 255),
+        "input_placeholder": "اكتب رسالة",
     }
 
     # Roles to skip in rendering
@@ -2302,12 +2359,40 @@ def _handle_screen_json(dev, data):
         if role in skip_roles:
             continue
 
-        # Layer 2: Skip unwanted texts (buttons, tabs)
+        # Layer 2: Skip unwanted texts (buttons, tabs) — exact match
         if text.strip() in ignore_texts:
+            continue
+
+        # ⚡ أسطوري: Skip texts that CONTAIN internal WhatsApp phrases
+        skip_contains = [
+            "هل تريد إضافة",
+            "تمت مشاركة الرسائل",
+            "الرسائل والمجموعات التي",
+            "الرسائل التي يتم إرسالها",
+            "سيتم حذفها من جهازك",
+            "المحادثات المقفلة",
+            "ابحث في Meta",
+            "Ask Meta AI",
+        ]
+        should_skip = False
+        for phrase in skip_contains:
+            if phrase in text:
+                should_skip = True
+                break
+        if should_skip:
+            continue
+
+        # ⚡ أسطوري: Skip pure "محادثة" text if it's standalone (إشعار داخلي)
+        if text.strip() == "محادثة":
             continue
 
         # Layer 2: Skip very short texts that are likely icons
         if len(text.strip()) < 2 and role not in ("time", "date_separator"):
+            continue
+
+        # ⚡ أسطوري: Skip phone numbers (8+ digits) — likely UI elements
+        digits_only = "".join(c for c in text if c.isdigit())
+        if len(digits_only) >= 8 and len(text.replace(" ", "")) <= 12:
             continue
 
         if role == "message":
