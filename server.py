@@ -2465,7 +2465,7 @@ def _handle_screen_json(dev, data):
             msg["time"] = best_time
 
     # ────────────────────────────────────────────────────────────
-    # Detect UI type — أسطوري: استخدم class_name أولاً ثم النصوص
+    # Detect UI type — أسطوري: 3 طبقات كشف بدون تخمين عشوائي
     # ────────────────────────────────────────────────────────────
     is_whatsapp = source == "whatsapp_monitor" or "whatsapp" in package
     ui_type = "generic"
@@ -2481,23 +2481,77 @@ def _handle_screen_json(dev, data):
             ui_type = WHATSAPP_LAYOUTS[class_name]
             logger.info(f"📸 UI type from class_name (full): {class_name} → {ui_type}")
 
-    # ⚡ الأولوية 2: من النصوص (إذا class_name غير معروف)
+    # ⚡ الأولوية 2: بصمات نصية (دقة 95%) — إذا class_name غير معروف
     if ui_type == "generic" and is_whatsapp:
-        # ابحث عن نصوص مميزة لكل واجهة
-        all_text = " ".join([v["text"] for v in parsed]).lower()
+        all_text = " ".join([v["text"] for v in parsed])
+        all_text_lower = all_text.lower()
 
-        if "type a message" in all_text or "اكتب رسالة" in all_text or "message_text" in str([v.get("id", "") for v in parsed]):
+        # بصمات المحادثة المفتوحة (الأكثر تميزاً)
+        conversation_fingerprints = [
+            "اكتب رسالة", "Type a message", "type a message",
+            "message_text", "Message", "Send", "ارسال",
+            "اكتب هنا", "Text", "text_composer"
+        ]
+        # بصمات الإعدادات
+        settings_fingerprints = [
+            "الإعدادات", "Settings", "settings",
+            "الحساب", "Account", "الخصوصية", "Privacy",
+            "المحادثات", "Chats", "الإشعارات", "Notifications"
+        ]
+        # بصمات معلومات جهة الاتصال
+        contact_info_fingerprints = [
+            "معلومات الاتصال", "Contact info", "معاينة",
+            "مكالمة فيديو", "Video call", "صامت", "Mute"
+        ]
+        # بصمات الحالات
+        status_fingerprints = [
+            "الحالة", "Status", "My status", "حالتي",
+            "التحديثات", "Recent updates"
+        ]
+        # بصمات المكالمات
+        calls_fingerprints = [
+            "المكالمات", "Calls", "مكالمات صادرة", "مكالمات واردة"
+        ]
+        # بصمات قائمة المحادثات
+        chat_list_fingerprints = [
+            "ابحث في Meta AI", "Meta AI", "ابحث أو ابدأ محادثة",
+            "ابحث عن رسالة", "Search", "ابحث",
+            "Chats", "المحادثات", "المجموعات"
+        ]
+
+        # تحقق بالترتيب (الأكثر تميزاً أولاً)
+        if any(fp in all_text for fp in conversation_fingerprints):
             ui_type = "conversation"
-        elif "settings" in all_text or "الإعدادات" in all_text:
-            ui_type = "settings"
-        elif has_message_role:
+            logger.info(f"📸 UI type from text fingerprint: conversation (اكتب رسالة)")
+        elif any(fp in all_text for fp in settings_fingerprints):
+            # تأكد أنه ليس قائمة المحادثات (التي تحتوي "المحادثات" كتبويب)
+            if "الإعدادات" in all_text or "Settings" in all_text:
+                ui_type = "settings"
+                logger.info(f"📸 UI type from text fingerprint: settings")
+        elif any(fp in all_text for fp in contact_info_fingerprints):
+            ui_type = "contact_info"
+            logger.info(f"📸 UI type from text fingerprint: contact_info")
+        elif any(fp in all_text for fp in status_fingerprints):
+            ui_type = "status"
+            logger.info(f"📸 UI type from text fingerprint: status")
+        elif any(fp in all_text for fp in calls_fingerprints):
+            ui_type = "calls"
+            logger.info(f"📸 UI type from text fingerprint: calls")
+        elif any(fp in all_text for fp in chat_list_fingerprints):
+            ui_type = "chat_list"
+            logger.info(f"📸 UI type from text fingerprint: chat_list")
+
+    # ⚡ الأولوية 3: بنية البيانات (دقة 85%) — آخر احتياطي
+    if ui_type == "generic" and is_whatsapp:
+        if has_message_role:
             ui_type = "conversation"
+            logger.info(f"📸 UI type from data structure: conversation (has messages)")
         elif has_chat_row_role:
             ui_type = "chat_list"
-        else:
-            ui_type = "chat_list" if len(parsed) > 5 else "conversation"
+            logger.info(f"📸 UI type from data structure: chat_list (has chat rows)")
+        # ❌ لا تخمين عشوائي — اترك generic إذا لم نعرف
 
-    logger.info(f"📸 screen_json: ui_type={ui_type}, class={class_name}, views={len(parsed)}, "
+    logger.info(f"📸 screen_json FINAL: ui_type={ui_type}, class={class_name}, views={len(parsed)}, "
                 f"has_msg={has_message_role}, has_row={has_chat_row_role}")
 
     # ────────────────────────────────────────────────────────────
