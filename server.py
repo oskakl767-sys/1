@@ -2546,27 +2546,48 @@ def _render_chat_list(draw, img_w, img_h, parsed, scale, font_header,
                       time_color, badge_color, avatar_bg, app_name,
                       screen_w, _re):
     """Render WhatsApp chat list view."""
+    # ⚡ أسطوري: قائمة ألوان متعددة للأيقونات (مثل واتساب الحقيقي)
+    avatar_colors = [
+        (37, 211, 102),    # أخضر واتساب
+        (0, 150, 136),     # تيل
+        (63, 81, 181),     # نيلي
+        (244, 67, 54),     # أحمر
+        (255, 152, 0),     # برتقالي
+        (156, 39, 176),    # بنفسجي
+        (121, 85, 72),     # بني
+        (0, 188, 212),     # سماوي
+        (76, 175, 80),     # أخضر فاتح
+        (255, 87, 34),     # برتقالي داكن
+        (3, 169, 244),     # أزرق فاتح
+        (139, 195, 74),    # أخضر ليموني
+    ]
+
     # ── Top header bar (green) ──
     header_h = 50
     draw.rectangle([0, 0, img_w, header_h], fill=header_bg)
     # Camera icon (left)
     draw.text((10, 14), "📷", fill=title_color, font=font_header)
-    # App name (center-right)
-    draw.text((50, 16), app_name, fill=title_color, font=font_header)
+    # App name (center-right) — أكبر وأوضح
+    draw.text((50, 15), app_name, fill=title_color, font=font_header)
     # Search icon (right)
-    draw.text((img_w - 40, 16), "🔍", fill=title_color, font=font_header)
+    draw.text((img_w - 70, 16), "🔍", fill=title_color, font=font_header)
     # Menu (right)
-    draw.text((img_w - 20, 16), "⋮", fill=title_color, font=font_header)
+    draw.text((img_w - 40, 16), "⋮", fill=title_color, font=font_header)
 
-    # ── Search bar ──
+    # ── Search bar (مُحسّن) ──
     search_y = header_h + 8
-    search_h = 32
-    search_pad = 8
+    search_h = 36
+    search_pad = 10
+    # شريط بحث بزوايا مستديرة أكثر ولون أوضح
     draw.rounded_rectangle(
         [search_pad, search_y, img_w - search_pad, search_y + search_h],
-        radius=16, fill=search_bg
+        radius=18, fill=search_bg
     )
-    draw.text((search_pad + 12, search_y + 8), "🔍  ابحث", fill=msg_preview_color, font=font_msg)
+    # أيقونة بحث داخل الشريط
+    draw.text((search_pad + 14, search_y + 10), "🔍", fill=(130, 130, 130), font=font_msg)
+    # نص البحث
+    draw.text((search_pad + 38, search_y + 10), "ابحث أو ابدأ محادثة جديدة",
+             fill=(130, 130, 130), font=font_msg)
 
     # ── Chat rows ──
     # Filter: skip header/search elements, take rows that look like chat entries
@@ -2615,7 +2636,7 @@ def _render_chat_list(draw, img_w, img_h, parsed, scale, font_header,
             valid_rows.append(row)
     rows = valid_rows
 
-    for row in rows[:15]:  # limit to 15 rows
+    for row_idx, row in enumerate(rows[:15]):  # limit to 15 rows
         # ⚡ أسطوري: استخدم Y الحقيقية لأول عنصر في الصف
         if row:
             real_row_y = int(row[0]["y"] * scale)
@@ -2627,16 +2648,9 @@ def _render_chat_list(draw, img_w, img_h, parsed, scale, font_header,
 
         current_y = real_row_y
 
-        # Draw avatar (circle)
-        avatar_x = 15
-        avatar_y = current_y + 5
-        avatar_size = 40
-        draw.ellipse(
-            [avatar_x, avatar_y, avatar_x + avatar_size, avatar_y + avatar_size],
-            fill=avatar_bg
-        )
-
-        # ⚡ إصلاح: استخراج الاسم والمعاينة بشكل ذكي
+        # ⚡ أسطوري: اختر لون عشوائي للأيقونة بناءً على الاسم (مثل واتساب)
+        # كل اسم له لون ثابت (hash) → نفس الاسم دائماً نفس اللون
+        # نحدد الاسم أولاً
         name_text = ""
         preview_text = ""
         time_text = ""
@@ -2676,6 +2690,23 @@ def _render_chat_list(draw, img_w, img_h, parsed, scale, font_header,
                 if item["text"] != name_text and item.get("role") != "time":
                     preview_text = item["text"]
                     break
+
+        # ⚡ أسطوري: اختر لون الأيقونة بناءً على hash الاسم
+        if name_text:
+            # احسب hash الاسم → رقم 0-11 → لون من القائمة
+            color_idx = sum(ord(c) for c in name_text) % len(avatar_colors)
+            avatar_color = avatar_colors[color_idx]
+        else:
+            avatar_color = avatar_colors[0]
+
+        # Draw avatar (circle) — بلون عشوائي من القائمة
+        avatar_x = 15
+        avatar_y = current_y + 5
+        avatar_size = 40
+        draw.ellipse(
+            [avatar_x, avatar_y, avatar_x + avatar_size, avatar_y + avatar_size],
+            fill=avatar_color
+        )
 
         # First letter of name
         if name_text:
@@ -2722,20 +2753,43 @@ def _render_chat_list(draw, img_w, img_h, parsed, scale, font_header,
         if current_y > img_h - 50:
             break
 
-    # ── Bottom tab bar ──
+    # ── Bottom tab bar (مُحسّن) ──
     tab_y = img_h - 50
-    draw.rectangle([0, tab_y, img_w, img_h], fill=(245, 245, 245))
+    # خلفية بيضاء مع حدود علوية رفيعة
+    draw.rectangle([0, tab_y, img_w, img_h], fill=(255, 255, 255))
+    draw.line([(0, tab_y), (img_w, tab_y)], fill=(230, 230, 230), width=1)
+
     tab_w = img_w / 4
-    tabs = ["💬", "👥", "📷", "📞"]
-    for i, icon in enumerate(tabs):
+    tabs = [
+        ("💬", "المحادثات", True),    # نشط
+        ("👥", "المجموعات", False),
+        ("📷", "الحالات", False),
+        ("📞", "المكالمات", False),
+    ]
+    for i, (icon, label, active) in enumerate(tabs):
         try:
+            # الأيقونة
             bbox = draw.textbbox((0, 0), icon, font=font_header)
             tw = bbox[2] - bbox[0]
-            draw.text((tab_w * i + (tab_w - tw) / 2, tab_y + 12), icon,
-                     fill=(37, 211, 102) if i == 0 else (136, 136, 136),
-                     font=font_header)
+            icon_x = tab_w * i + (tab_w - tw) / 2
+            icon_y = tab_y + 8
+
+            # لون النشط vs العادي
+            color = (37, 211, 102) if active else (136, 136, 136)
+            draw.text((icon_x, icon_y), icon, fill=color, font=font_header)
+
+            # النص تحت الأيقونة (صغير)
+            bbox2 = draw.textbbox((0, 0), label, font=font_small)
+            tw2 = bbox2[2] - bbox2[0]
+            draw.text((tab_w * i + (tab_w - tw2) / 2, tab_y + 30), label,
+                     fill=color, font=font_small)
         except Exception:
             pass
+
+    # مؤشر النشط (خط أخضر تحت التبويب الأول)
+    indicator_x = tab_w * 0 + (tab_w - 30) / 2
+    draw.rectangle([indicator_x, tab_y, indicator_x + 30, tab_y + 3],
+                   fill=(37, 211, 102))
 
 
 def _render_conversation(draw, img, img_w, img_h, parsed, scale, font_header,
