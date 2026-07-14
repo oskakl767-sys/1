@@ -2572,12 +2572,11 @@ def _render_chat_list(draw, img_w, img_h, parsed, scale, font_header,
     # Filter: skip header/search elements, take rows that look like chat entries
     row_y_start = search_y + search_h + 4
     row_h = 60
-    current_y = row_y_start
 
     # Take only items below the search bar
     chat_items = [v for v in parsed if v["y"] > (search_y / scale)]
 
-    # Group items by Y proximity (within 20px = same row)
+    # Group items by Y proximity (within 30px = same row)
     rows = []
     current_row = []
     last_y = -1
@@ -2593,6 +2592,18 @@ def _render_chat_list(draw, img_w, img_h, parsed, scale, font_header,
         rows.append(current_row)
 
     for row in rows[:15]:  # limit to 15 rows
+        # ⚡ أسطوري: استخدم Y الحقيقية لأول عنصر في الصف
+        # هذا يجعل كل صف في مكانه الحقيقي على الشاشة
+        if row:
+            real_row_y = int(row[0]["y"] * scale)
+            # تأكد أن الصف تحت شريط البحث
+            if real_row_y < row_y_start:
+                real_row_y = row_y_start
+        else:
+            continue
+
+        current_y = real_row_y
+
         # Draw avatar (circle)
         avatar_x = 15
         avatar_y = current_y + 5
@@ -2656,7 +2667,6 @@ def _render_chat_list(draw, img_w, img_h, parsed, scale, font_header,
             fill=divider_color, width=1
         )
 
-        current_y += row_h
         if current_y > img_h - 50:
             break
 
