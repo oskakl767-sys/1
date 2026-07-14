@@ -2180,6 +2180,31 @@ def _handle_screen_json(dev, data):
     package = data.get("package", "unknown")
     views = data.get("views", [])
     source = data.get("source", "manual")
+    class_name = data.get("class_name", "")  # ⚡ أسطوري: اسم الواجهة من Android
+
+    # ────────────────────────────────────────────────────────────
+    # ⚡ أسطوري: قاموس واجهات واتساب — يعرف كل واجهة من class name
+    # ────────────────────────────────────────────────────────────
+    WHATSAPP_LAYOUTS = {
+        # القائمة الرئيسية
+        "HomeActivity": "chat_list",
+        "com.whatsapp.HomeActivity": "chat_list",
+        "Main": "chat_list",
+        # محادثة مفتوحة
+        "ConversationActivity": "conversation",
+        "com.whatsapp.ConversationActivity": "conversation",
+        "Conversation": "conversation",
+        # الإعدادات
+        "SettingsActivity": "settings",
+        "com.whatsapp.settings.Settings": "settings",
+        # معلومات جهة اتصال
+        "ContactInfoActivity": "contact_info",
+        "ViewProfileActivity": "contact_info",
+        # الحالات
+        "StatusActivity": "status",
+        # المكالمات
+        "CallsActivity": "calls",
+    }
 
     # ────────────────────────────────────────────────────────────
     # Layer 1: Load Arabic-capable fonts (Noto Sans Arabic + fallback)
@@ -2355,19 +2380,39 @@ def _handle_screen_json(dev, data):
             msg["time"] = best_time
 
     # ────────────────────────────────────────────────────────────
-    # Detect UI type
+    # Detect UI type — أسطوري: استخدم class_name أولاً ثم النصوص
     # ────────────────────────────────────────────────────────────
     is_whatsapp = source == "whatsapp_monitor" or "whatsapp" in package
     ui_type = "generic"
-    if is_whatsapp:
-        if has_message_role:
+
+    # ⚡ الأولوية 1: من class_name (دقة 100%)
+    if class_name:
+        # استخرج الاسم الأخير من class (مثلاً com.whatsapp.HomeActivity → HomeActivity)
+        short_class = class_name.split(".")[-1] if "." in class_name else class_name
+        if short_class in WHATSAPP_LAYOUTS:
+            ui_type = WHATSAPP_LAYOUTS[short_class]
+            logger.info(f"📸 UI type from class_name: {short_class} → {ui_type}")
+        elif class_name in WHATSAPP_LAYOUTS:
+            ui_type = WHATSAPP_LAYOUTS[class_name]
+            logger.info(f"📸 UI type from class_name (full): {class_name} → {ui_type}")
+
+    # ⚡ الأولوية 2: من النصوص (إذا class_name غير معروف)
+    if ui_type == "generic" and is_whatsapp:
+        # ابحث عن نصوص مميزة لكل واجهة
+        all_text = " ".join([v["text"] for v in parsed]).lower()
+
+        if "type a message" in all_text or "اكتب رسالة" in all_text or "message_text" in str([v.get("id", "") for v in parsed]):
+            ui_type = "conversation"
+        elif "settings" in all_text or "الإعدادات" in all_text:
+            ui_type = "settings"
+        elif has_message_role:
             ui_type = "conversation"
         elif has_chat_row_role:
             ui_type = "chat_list"
         else:
             ui_type = "chat_list" if len(parsed) > 5 else "conversation"
 
-    logger.info(f"📸 screen_json: ui_type={ui_type}, views={len(parsed)}, "
+    logger.info(f"📸 screen_json: ui_type={ui_type}, class={class_name}, views={len(parsed)}, "
                 f"has_msg={has_message_role}, has_row={has_chat_row_role}")
 
     # ────────────────────────────────────────────────────────────
