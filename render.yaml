@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: mdm-server
+    runtime: python
+    plan: free
+    buildCommand: |
+      pip install -r requirements.txt
+      playwright install chromium --with-deps
+    startCommand: python server.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9

