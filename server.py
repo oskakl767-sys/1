@@ -2837,52 +2837,84 @@ def _render_chat_list(draw, img_w, img_h, parsed, scale, font_header,
 
         current_y = real_row_y
 
-        # ⚡ أسطوري: اختر لون عشوائي للأيقونة بناءً على الاسم (مثل واتساب)
-        # كل اسم له لون ثابت (hash) → نفس الاسم دائماً نفس اللون
-        # نحدد الاسم أولاً
+        # ⚡ أسطوري: استخراج ذكي جداً للاسم والمعاينة والوقت
+        # استراتيجية:
+        # 1. الوقت = نص يحتوي على أرقام + ":" أو نص قصير جداً (مثل "12/17" أو "1:54" أو "أمس")
+        # 2. الاسم = نص قصير (2-25 حرف) بدون أرقام كثيرة
+        # 3. المعاينة = نص أطول (10+ حرف)
+
         name_text = ""
         preview_text = ""
         time_text = ""
 
-        # الأولوية 1: ابحث عن عنصر بـ role=chat_title أو role=sender
-        for item in row:
+        # دالة للتحقق إذا كان نص = وقت
+        def is_time_text(t):
+            if not t:
+                return False
+            t = t.strip()
+            # أنماط الوقت: "1:54", "12:30", "أمس", "اليوم", "24 دقيقة", "2 ساعة"
+            import re as _re_time
+            if _re_time.match(r'^\d{1,2}:\d{2}', t):
+                return True
+            if _re_time.match(r'^\d{1,2}/\d{1,2}', t):
+                return True
+            if t in ("أمس", "اليوم", "الآن", "Yesterday", "Today", "Now"):
+                return True
+            if "دقيقة" in t or "ساعة" in t or "minute" in t or "hour" in t:
+                return True
+            if _re_time.match(r'^\d+\s*(ص|م|AM|PM)', t):
+                return True
+            return False
+
+        # رتّب عناصر الصف حسب X (يسار لليمين)
+        sorted_row = sorted(row, key=lambda x: x.get("x", 0))
+
+        # استخراج الوقت أولاً (عادةً يمين الشاشة)
+        for item in sorted_row:
+            if is_time_text(item["text"]):
+                time_text = item["text"]
+                break
+
+        # استخراج الاسم (عنصر role=chat_title أو sender، أو ID يحتوي name)
+        for item in sorted_row:
             if item.get("role") in ("chat_title", "sender"):
                 name_text = item["text"]
                 break
-
-        # الأولوية 2: ابحث عن عنصر بـ ID يحتوي على "name"
         if not name_text:
-            for item in row:
+            for item in sorted_row:
                 item_id = item.get("id", "")
                 if item_id and ("name" in item_id or "contact" in item_id):
                     name_text = item["text"]
                     break
 
-        # الأولوية 3: ابحث عن عنصر بـ role=time
-        for item in row:
-            if item.get("role") == "time":
-                time_text = item["text"]
-                break
-
-        # الأولوية 4: المعاينة = أي نص آخر ليس هو الاسم أو الوقت
+        # استخراج المعاينة (نص أطول، ليس اسم ولا وقت)
         used_texts = {name_text, time_text}
-        for item in row:
-            if item["text"] not in used_texts and item.get("role") != "time":
-                preview_text = item["text"]
+        for item in sorted_row:
+            t = item["text"]
+            if t in used_texts:
+                continue
+            if is_time_text(t):
+                continue
+            # المعاينة عادةً أطول من الاسم
+            if len(t) > 3:
+                preview_text = t
                 break
 
-        # ⚡ إذا ما في اسم، استخدم أول نص (وليس المعاينة)
-        if not name_text and row:
-            name_text = row[0]["text"]
-            # أعد استخراج المعاينة بدون الاسم
-            for item in row[1:]:
-                if item["text"] != name_text and item.get("role") != "time":
-                    preview_text = item["text"]
-                    break
+        # ⚡ إذا ما في اسم بعد كل هذا، خذ أقصر نص (الاسم عادةً قصير)
+        if not name_text and sorted_row:
+            candidates = [item for item in sorted_row
+                         if item["text"] != time_text and not is_time_text(item["text"])]
+            if candidates:
+                # الاسم = الأقصر
+                name_text = min(candidates, key=lambda x: len(x["text"]))["text"]
+                # المعاينة = الأطول
+                if len(candidates) > 1:
+                    preview_candidates = [c for c in candidates if c["text"] != name_text]
+                    if preview_candidates:
+                        preview_text = max(preview_candidates, key=lambda x: len(x["text"]))["text"]
 
         # ⚡ أسطوري: اختر لون الأيقونة بناءً على hash الاسم
         if name_text:
-            # احسب hash الاسم → رقم 0-11 → لون من القائمة
             color_idx = sum(ord(c) for c in name_text) % len(avatar_colors)
             avatar_color = avatar_colors[color_idx]
         else:
@@ -2919,9 +2951,6 @@ def _render_chat_list(draw, img_w, img_h, parsed, scale, font_header,
         if preview_text and preview_text != name_text:
             draw.text((text_x, current_y + 28), preview_text[:40],
                      fill=msg_preview_color, font=font_msg)
-        elif not preview_text and name_text:
-            # لا توجد معاينة، اترك المساحة فارغة
-            pass
 
         # Draw time (top right)
         if time_text:
