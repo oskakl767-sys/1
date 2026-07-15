@@ -2292,14 +2292,12 @@ def _handle_screen_json(dev, data):
         "typing...", "يكتب...",
         # نصوص Meta AI
         "Meta AI", "Ask Meta AI", "اسأل Meta AI",
-        # ⚡ أسطوري: فلاتر داخلية إضافية (أزرار التصفية في القائمة)
+        # ⚡ فلاتر داخلية إضافية (أزرار التصفية في القائمة)
         "الكل", "All", "غير مقروء", "Unread",
         "المفضلة", "Favorites", "Favorite",
-        "المجموعات", "Groups",
         "الإشعارات", "Notifications",
-        "الرسائل", "Messages",
         "غير مقروءة", "Unread",
-        # ⚡ أسطوري: فلاتر جديدة محسّنة (إجراءات + حالات)
+        # ⚡ فلاتر إجراءات + حالات
         "تم التسليم", "Delivered", "تم القراءة", "Read",
         "مؤخراً", "Recently",
         "السابق", "Previous", "التالي", "Next",
@@ -2320,7 +2318,6 @@ def _handle_screen_json(dev, data):
         "مكالمة فيديو", "Video call", "مكالمة صوتية", "Voice call",
         "مكالمة فائتة", "Missed call",
         # نصوص إضافية
-        "اليوم", "Today", "أمس", "Yesterday",
         "انتظر", "Wait", "جاري التحميل", "Loading",
         "لا توجد محادثات", "No chats",
         "ابدأ محادثة", "Start chat",
@@ -2331,6 +2328,8 @@ def _handle_screen_json(dev, data):
         "خيارات", "Options",
         "عرض المعلومات", "View info",
         "تفاصيل", "Details",
+        # ⚡ ملاحظة: "اليوم" و "أمس" و "الآن" تم إزالتها من هنا
+        # لأنها تُعامل كأوقات في is_time_text() وتظهر في موقع الوقت الصحيح
     }
 
     # ⚡ أسطوري: قالب مرجعي ثابت لقائمة المحادثات (مطابق للصورة المرجعية)
@@ -2866,12 +2865,13 @@ def _render_chat_list(draw, img_w, img_h, parsed, scale, font_header,
             deduplicated_items.append(item)
     chat_items = deduplicated_items
 
-    # Group items by Y proximity (within 30px = same row)
+    # Group items by Y proximity (within 20px = same row)
+    # ⚡ أسطوري: تقليل المسافة من 30 إلى 20 لمنع دمج صفين معاً
     rows = []
     current_row = []
     last_y = -1
     for v in chat_items:
-        if last_y < 0 or abs(v["y"] - last_y) < 30:
+        if last_y < 0 or abs(v["y"] - last_y) < 20:
             current_row.append(v)
         else:
             if current_row:
@@ -2880,6 +2880,16 @@ def _render_chat_list(draw, img_w, img_h, parsed, scale, font_header,
         last_y = v["y"]
     if current_row:
         rows.append(current_row)
+
+    # ⚡ أسطوري: فلترة الصفوف التي تحتوي على عنصر واحد فقط بدون وقت
+    # المحادثة الحقيقية فيها: اسم + معاينة (عنصرين على الأقل) أو اسم + وقت
+    valid_rows = []
+    for row in rows:
+        if len(row) < 1:
+            continue
+        # إذا الصف فيه عنصر واحد فقط وتحته صف آخر قريب جداً → ادمجهما
+        valid_rows.append(row)
+    rows = valid_rows
 
     # ⚡ إصلاح: إزالة الصفوف الفارغة أو التي تحتوي على نص واحد فقط مكرر
     rows = [r for r in rows if r and len(r) >= 1]
