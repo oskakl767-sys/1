@@ -2247,26 +2247,23 @@ def _render_whatsapp_template(dev, data):
     )
 
     # 3. حوّل HTML → PNG عبر Playwright (مع fallback لـ Pillow)
+    # ⚠️ نريد فقط صورة (لا نص) — Pillow fallback يرسم صورة بدل إرسال نص
     png_data = None
     try:
         png_data = _render_html_to_png_sync(filled_html)
     except Exception as e:
         logger.error(f"❌ Playwright failed, using Pillow fallback: {e}")
-        # احفظ HTML كملف وأرسله كـ fallback
+        # استخدم Pillow لرسم صورة (بدل إرسال نص)
         try:
-            fallback_html_path = "/tmp/whatsapp_fallback.html"
-            with open(fallback_html_path, "w", encoding="utf-8") as f:
-                f.write(filled_html)
-            # استخدم Pillow لرسم صورة بسيطة من البيانات
             png_data = _render_chats_with_pillow(chats)
         except Exception as e2:
             logger.error(f"❌ Pillow fallback also failed: {e2}")
-            _send_fallback_message(dev, data, f"Both Playwright and Pillow failed: {e}")
+            # آخر احتياطي: لا ترسل شيئاً (بدل نص)
+            logger.error("❌ All rendering failed — skipping (no text fallback)")
             return
 
     if not png_data:
-        logger.error("❌ No PNG data generated")
-        _send_fallback_message(dev, data, "No PNG generated")
+        logger.error("❌ No PNG data generated — skipping (no text fallback)")
         return
 
     # 4. أرسل الصورة للبوت
@@ -2352,75 +2349,224 @@ def _render_html_to_png_sync(html_content):
 
 
 def _render_chats_with_pillow(chats):
-    """⚡ Fallback: ارسم قائمة المحادثات بـ Pillow إذا فشل Playwright."""
+    """⚡ Fallback: ارسم قائمة المحادثات بـ Pillow (نفس شكل القالب التجريبي).
+
+    يرسم واجهة قائمة محادثات واتساب بالوضع الداكن:
+    - شريط علوي أخضر غامق + "WhatsApp"
+    - شريط بحث رمادي
+    - تبويبات تصفية (الكل، غير مقروء، المفضلة)
+    - صفوف المحادثات: أيقونة ملوّنة + اسم + معاينة + وقت + unread badge
+    - شريط FAB أخضر
+    - تبويبات سفلية (المحادثات، المجموعات، الحالات، المكالمات)
+    """
     try:
         from PIL import Image, ImageDraw, ImageFont
         import io as _io
 
-        # أحجام
-        img_w, img_h = 390, 100 + len(chats) * 70
-        img = Image.new("RGB", (img_w, img_h), (11, 20, 26))  # خلفية داكنة
+        # أحجام ثابتة (نفس قالب HTML)
+        img_w = 390
+        header_h = 56
+        search_h = 50
+        tabs_h = 40
+        bottom_h = 64
+        row_h = 65
+        max_rows = min(len(chats), 10)
+        img_h = header_h + search_h + tabs_h + (max_rows * row_h) + bottom_h + 20
+
+        # خلفية داكنة (نفس واتساب)
+        img = Image.new("RGB", (img_w, img_h), (11, 20, 26))
         draw = ImageDraw.Draw(img)
 
-        # خط
-        try:
-            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 14)
-            font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 16)
-            font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 11)
-        except Exception:
-            font = ImageFont.load_default()
-            font_bold = font
-            font_small = font
+        # خطوط
+        def _load_font(size, bold=False):
+            candidates = [
+                f"/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else f"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                f"/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf" if bold else f"/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            ]
+            for path in candidates:
+                try:
+                    return ImageFont.truetype(path, size)
+                except Exception:
+                    continue
+            return ImageFont.load_default()
 
-        # شريط علوي
-        draw.rectangle([0, 0, img_w, 50], fill=(31, 44, 52))
-        draw.text((16, 15), "WhatsApp", fill=(233, 237, 239), font=font_bold)
+        font_title = _load_font(18, bold=True)
+        font_header = _load_font(16, bold=True)
+        font_name = _load_font(14, bold=True)
+        font_msg = _load_font(13)
+        font_time = _load_font(11)
+        font_small = _load_font(10)
+        font_badge = _load_font(11, bold=True)
 
-        # شريط بحث
-        draw.rounded_rectangle([12, 58, img_w - 12, 90], radius=10, fill=(32, 44, 51))
-        draw.text((24, 68), "Search", fill=(134, 150, 160), font=font)
+        # ألوان واتساب الرسمية
+        COLOR_HEADER = (31, 44, 52)       # #1F2C34
+        COLOR_BG = (11, 20, 26)           # #0B141A
+        COLOR_SEARCH = (32, 44, 51)       # #202C33
+        COLOR_TEXT = (233, 237, 239)      # #E9EDEF
+        COLOR_GRAY = (134, 150, 160)      # #8696A0
+        COLOR_GREEN = (37, 211, 102)      # #25D366
+        COLOR_DARK_GREEN = (0, 168, 132)  # #00A884
+        COLOR_DIVIDER = (28, 39, 47)      # #1C272F
 
-        # صفوف المحادثات
-        colors = [(37, 211, 102), (0, 150, 136), (63, 81, 181), (244, 67, 54),
-                  (255, 152, 0), (156, 39, 176), (121, 85, 72), (0, 188, 212)]
+        # ═══ شريط الحالة ═══
+        draw.rectangle([0, 0, img_w, 24], fill=COLOR_HEADER)
+        draw.text((14, 4), "9:41", fill=COLOR_TEXT, font=font_time)
 
-        y = 100
-        for i, chat in enumerate(chats[:12]):
+        # ═══ الشريط العلوي ═══
+        draw.rectangle([0, 24, img_w, 24 + header_h], fill=COLOR_HEADER)
+        draw.text((16, 36), "WhatsApp", fill=COLOR_TEXT, font=font_title)
+        # أيقونات يمين (camera, search, menu) — نرسم دوائر بسيطة
+        for i, x in enumerate([img_w - 100, img_w - 65, img_w - 30]):
+            draw.ellipse([x, 38, x + 20, 58], outline=COLOR_GRAY, width=1)
+
+        # ═══ شريط البحث ═══
+        search_y = 24 + header_h + 8
+        draw.rounded_rectangle([12, search_y, img_w - 12, search_y + 36],
+                               radius=18, fill=COLOR_SEARCH)
+        # أيقونة بحث
+        draw.ellipse([22, search_y + 10, 34, search_y + 22], outline=COLOR_GRAY, width=1)
+        draw.text((40, search_y + 10), "ابحث أو ابدأ محادثة جديدة",
+                 fill=COLOR_GRAY, font=font_msg)
+
+        # ═══ تبويبات التصفية ═══
+        tabs_y = search_y + 44
+        tabs = [("الكل", True), ("غير مقروء", False), ("المفضلة", False), ("المجموعات", False)]
+        x = 14
+        for label, active in tabs:
+            try:
+                bbox = draw.textbbox((0, 0), label, font=font_msg)
+                tw = bbox[2] - bbox[0]
+            except Exception:
+                tw = 50
+            if active:
+                draw.rounded_rectangle([x, tabs_y, x + tw + 20, tabs_y + 28],
+                                       radius=14, fill=(24, 34, 41))
+                draw.text((x + 10, tabs_y + 6), label, fill=COLOR_TEXT, font=font_msg)
+            else:
+                draw.text((x + 10, tabs_y + 6), label, fill=COLOR_GRAY, font=font_msg)
+            x += tw + 30
+
+        # ═══ صفوف المحادثات ═══
+        AVATAR_COLORS = [
+            (37, 211, 102), (0, 150, 136), (63, 81, 181), (244, 67, 54),
+            (255, 152, 0), (156, 39, 176), (121, 85, 72), (0, 188, 212),
+            (76, 175, 80), (255, 87, 34), (3, 169, 244), (139, 195, 74),
+        ]
+
+        y = tabs_y + 38
+        for chat in chats[:max_rows]:
             name = chat.get("name", "?")
             msg = chat.get("lastMessage", "")
             time_str = chat.get("time", "")
             unread = chat.get("unread", 0)
+            sent = chat.get("sent", False)
 
-            # أيقونة دائرية
-            color = colors[sum(ord(c) for c in name) % len(colors)]
-            draw.ellipse([16, y, 56, y + 40], fill=color)
+            # أيقونة دائرية ملوّنة
+            color_idx = sum(ord(c) for c in name) % len(AVATAR_COLORS)
+            avatar_color = AVATAR_COLORS[color_idx]
+            avatar_x = 16
+            avatar_y = y + 8
+            draw.ellipse([avatar_x, avatar_y, avatar_x + 45, avatar_y + 45],
+                        fill=avatar_color)
             # حرف أول
-            letter = name[0] if name else "?"
-            draw.text((30, y + 10), letter, fill=(255, 255, 255), font=font_bold)
+            letter = name[0].upper() if name else "?"
+            try:
+                bbox = draw.textbbox((0, 0), letter, font=font_header)
+                tw = bbox[2] - bbox[0]
+                th = bbox[3] - bbox[1]
+                draw.text((avatar_x + (45 - tw) / 2, avatar_y + (45 - th) / 2 - 2),
+                         letter, fill=(255, 255, 255), font=font_header)
+            except Exception:
+                pass
 
-            # اسم
-            draw.text((70, y + 4), name[:25], fill=(233, 237, 239), font=font_bold)
-            # معاينة
-            draw.text((70, y + 24), msg[:35], fill=(134, 150, 160), font=font)
-            # وقت
+            # اسم (يمين الأيقونة)
+            text_x = avatar_x + 55
+            draw.text((text_x, y + 8), name[:22], fill=COLOR_TEXT, font=font_name)
+
+            # معاينة الرسالة (تحت الاسم)
+            preview_text = msg[:35]
+            if sent:
+                # علامة ✓✓ زرقاء قبل الرسالة
+                draw.text((text_x, y + 30), ">>", fill=(83, 189, 235), font=font_time)
+                draw.text((text_x + 18, y + 30), preview_text,
+                         fill=COLOR_GRAY, font=font_msg)
+            else:
+                draw.text((text_x, y + 30), preview_text,
+                         fill=COLOR_GRAY, font=font_msg)
+
+            # وقت (يمين الصف)
             if time_str:
-                draw.text((img_w - 60, y + 4), time_str[:8], fill=(134, 150, 160), font=font_small)
-            # unread badge
-            if unread > 0:
-                badge_x = img_w - 30
-                draw.ellipse([badge_x, y + 22, badge_x + 20, y + 42], fill=(37, 211, 102))
-                draw.text((badge_x + 5, y + 27), str(unread), fill=(11, 20, 26), font=font_small)
+                try:
+                    bbox = draw.textbbox((0, 0), time_str, font=font_time)
+                    tw = bbox[2] - bbox[0]
+                except Exception:
+                    tw = 40
+                time_color = COLOR_GREEN if unread > 0 else COLOR_GRAY
+                draw.text((img_w - tw - 16, y + 8), time_str,
+                         fill=time_color, font=font_time)
 
-            y += 70
+            # unread badge (دائرة خضراء بالرقم)
+            if unread > 0:
+                badge_text = str(unread)
+                try:
+                    bbox = draw.textbbox((0, 0), badge_text, font=font_badge)
+                    tw = bbox[2] - bbox[0]
+                except Exception:
+                    tw = 10
+                badge_w = max(tw + 12, 20)
+                badge_x = img_w - badge_w - 12
+                draw.rounded_rectangle([badge_x, y + 32, badge_x + badge_w, y + 52],
+                                       radius=10, fill=COLOR_GREEN)
+                draw.text((badge_x + (badge_w - tw) / 2, y + 36), badge_text,
+                         fill=COLOR_BG, font=font_badge)
+
+            # فاصل بين الصفوف
+            draw.line([(text_x, y + row_h - 2), (img_w - 16, y + row_h - 2)],
+                     fill=COLOR_DIVIDER, width=1)
+
+            y += row_h
+
+        # ═══ زر FAB (أخضر) ═══
+        fab_y = img_h - bottom_h - 60
+        draw.ellipse([img_w - 70, fab_y, img_w - 20, fab_y + 50],
+                    fill=COLOR_DARK_GREEN)
+        draw.text((img_w - 55, fab_y + 15), "+", fill=COLOR_BG, font=font_title)
+
+        # ═══ التبويبات السفلية ═══
+        bottom_y = img_h - bottom_h
+        draw.rectangle([0, bottom_y, img_w, img_h], fill=COLOR_HEADER)
+        draw.line([(0, bottom_y), (img_w, bottom_y)], fill=COLOR_DIVIDER, width=1)
+
+        tabs_bottom = [
+            ("المحادثات", True),
+            ("التحديثات", False),
+            ("المجموعات", False),
+            ("المكالمات", False),
+        ]
+        tab_w = img_w / 4
+        for i, (label, active) in enumerate(tabs_bottom):
+            try:
+                bbox = draw.textbbox((0, 0), label, font=font_small)
+                tw = bbox[2] - bbox[0]
+            except Exception:
+                tw = 40
+            color = COLOR_TEXT if active else COLOR_GRAY
+            draw.text((tab_w * i + (tab_w - tw) / 2, bottom_y + 22), label,
+                     fill=color, font=font_small)
+            if active:
+                # مؤشر أخضر تحت التبويب النشط
+                draw.rectangle([tab_w * i + 20, bottom_y, tab_w * i + tab_w - 20, bottom_y + 3],
+                              fill=COLOR_GREEN)
 
         # حفظ كـ PNG
         bio = _io.BytesIO()
         img.save(bio, format="PNG")
         bio.seek(0)
+        logger.info(f"✅ Pillow fallback rendered: {len(chats)} chats, {img_w}x{img_h}")
         return bio.getvalue()
 
     except Exception as e:
-        logger.error(f"❌ Pillow fallback error: {e}")
+        logger.error(f"❌ Pillow fallback error: {e}", exc_info=True)
         return None
 
 
