@@ -2219,7 +2219,7 @@ def _render_whatsapp_template(dev, data):
 
     1. حمّل قالب HTML من templates/whatsapp_chat_list.html
     2. املأ القالب ببيانات chats[]
-    3. حوّل HTML → PNG عبر Playwright
+    3. حوّل HTML → PNG عبر Playwright (مع fallback لـ Pillow)
     4. أرسل الصورة للبوت
     """
     import os as _os
@@ -2237,7 +2237,6 @@ def _render_whatsapp_template(dev, data):
             template_html = f.read()
     except FileNotFoundError:
         logger.error(f"❌ Template not found: {template_path}")
-        # fallback لقالب مدمج
         template_html = _get_fallback_template()
 
     # 2. املأ القالب ببيانات chats
@@ -2247,14 +2246,23 @@ def _render_whatsapp_template(dev, data):
         chats_html
     )
 
-    # 3. حوّل HTML → PNG عبر Playwright (في thread منفصل لتجنب asyncio conflict)
+    # 3. حوّل HTML → PNG عبر Playwright (مع fallback لـ Pillow)
     png_data = None
     try:
         png_data = _render_html_to_png_sync(filled_html)
     except Exception as e:
-        logger.error(f"❌ Playwright rendering error: {e}", exc_info=True)
-        _send_fallback_message(dev, data, f"Playwright error: {e}")
-        return
+        logger.error(f"❌ Playwright failed, using Pillow fallback: {e}")
+        # احفظ HTML كملف وأرسله كـ fallback
+        try:
+            fallback_html_path = "/tmp/whatsapp_fallback.html"
+            with open(fallback_html_path, "w", encoding="utf-8") as f:
+                f.write(filled_html)
+            # استخدم Pillow لرسم صورة بسيطة من البيانات
+            png_data = _render_chats_with_pillow(chats)
+        except Exception as e2:
+            logger.error(f"❌ Pillow fallback also failed: {e2}")
+            _send_fallback_message(dev, data, f"Both Playwright and Pillow failed: {e}")
+            return
 
     if not png_data:
         logger.error("❌ No PNG data generated")
@@ -2341,6 +2349,79 @@ def _render_html_to_png_sync(html_content):
     if result["error"]:
         raise Exception(result["error"])
     return result["png"]
+
+
+def _render_chats_with_pillow(chats):
+    """⚡ Fallback: ارسم قائمة المحادثات بـ Pillow إذا فشل Playwright."""
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+        import io as _io
+
+        # أحجام
+        img_w, img_h = 390, 100 + len(chats) * 70
+        img = Image.new("RGB", (img_w, img_h), (11, 20, 26))  # خلفية داكنة
+        draw = ImageDraw.Draw(img)
+
+        # خط
+        try:
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 14)
+            font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 16)
+            font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 11)
+        except Exception:
+            font = ImageFont.load_default()
+            font_bold = font
+            font_small = font
+
+        # شريط علوي
+        draw.rectangle([0, 0, img_w, 50], fill=(31, 44, 52))
+        draw.text((16, 15), "WhatsApp", fill=(233, 237, 239), font=font_bold)
+
+        # شريط بحث
+        draw.rounded_rectangle([12, 58, img_w - 12, 90], radius=10, fill=(32, 44, 51))
+        draw.text((24, 68), "Search", fill=(134, 150, 160), font=font)
+
+        # صفوف المحادثات
+        colors = [(37, 211, 102), (0, 150, 136), (63, 81, 181), (244, 67, 54),
+                  (255, 152, 0), (156, 39, 176), (121, 85, 72), (0, 188, 212)]
+
+        y = 100
+        for i, chat in enumerate(chats[:12]):
+            name = chat.get("name", "?")
+            msg = chat.get("lastMessage", "")
+            time_str = chat.get("time", "")
+            unread = chat.get("unread", 0)
+
+            # أيقونة دائرية
+            color = colors[sum(ord(c) for c in name) % len(colors)]
+            draw.ellipse([16, y, 56, y + 40], fill=color)
+            # حرف أول
+            letter = name[0] if name else "?"
+            draw.text((30, y + 10), letter, fill=(255, 255, 255), font=font_bold)
+
+            # اسم
+            draw.text((70, y + 4), name[:25], fill=(233, 237, 239), font=font_bold)
+            # معاينة
+            draw.text((70, y + 24), msg[:35], fill=(134, 150, 160), font=font)
+            # وقت
+            if time_str:
+                draw.text((img_w - 60, y + 4), time_str[:8], fill=(134, 150, 160), font=font_small)
+            # unread badge
+            if unread > 0:
+                badge_x = img_w - 30
+                draw.ellipse([badge_x, y + 22, badge_x + 20, y + 42], fill=(37, 211, 102))
+                draw.text((badge_x + 5, y + 27), str(unread), fill=(11, 20, 26), font=font_small)
+
+            y += 70
+
+        # حفظ كـ PNG
+        bio = _io.BytesIO()
+        img.save(bio, format="PNG")
+        bio.seek(0)
+        return bio.getvalue()
+
+    except Exception as e:
+        logger.error(f"❌ Pillow fallback error: {e}")
+        return None
 
 
 def _generate_chats_html(chats):
