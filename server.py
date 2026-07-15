@@ -2264,7 +2264,7 @@ def _handle_screen_json(dev, data):
         "مكالمات", "الحالات", "الإعدادات", "المحادثات", "المجموعات", "التحديثات",
         # شريط الإدخال
         "Send", "ارسال", "Type a message", "اكتب رسالة",
-        "Message", "رسالة",
+        "Message", "رسالة", "رسائل",
         # شريط البحث
         "Search", "بحث", "ابحث",
         "ابحث عن رسالة أو جهة اتصال",
@@ -2299,7 +2299,38 @@ def _handle_screen_json(dev, data):
         "الإشعارات", "Notifications",
         "الرسائل", "Messages",
         "غير مقروءة", "Unread",
+        # ⚡ أسطوري: فلاتر جديدة محسّنة (إجراءات + حالات)
+        "تم التسليم", "Delivered", "تم القراءة", "Read",
+        "مؤخراً", "Recently",
+        "السابق", "Previous", "التالي", "Next",
+        "تحديد", "Select", "تحديد الكل", "Select all",
+        "حذف", "Delete", "أرشفة", "Archive",
+        "تم", "Done", "إلغاء", "Cancel",
+        "موافق", "OK", "تأكيد", "Confirm",
+        "تحرير", "Edit", "تعديل",
+        "مشاركة", "Share", "نسخ", "Copy",
+        "إعادة توجيه", "Forward",
+        "رد", "Reply", "الرد",
+        "صامت", "Mute", "إلغاء كتم الصوت", "Unmute",
+        "حظر", "Block", "إلغاء الحظر", "Unblock",
+        "تقرير", "Report", "إبلاغ",
+        # نصوص حالة الرسالة
+        "✓", "✓✓", "Sending...", "جاري الإرسال...",
+        # نصوص المكالمات
+        "مكالمة فيديو", "Video call", "مكالمة صوتية", "Voice call",
+        "مكالمة فائتة", "Missed call",
         # نصوص إضافية
+        "اليوم", "Today", "أمس", "Yesterday",
+        "انتظر", "Wait", "جاري التحميل", "Loading",
+        "لا توجد محادثات", "No chats",
+        "ابدأ محادثة", "Start chat",
+        # نصوص الإعدادات السريعة
+        "حالة الاتصال", "Connection status",
+        "تشفير من طرف لطرف", "End-to-end encrypted",
+        # نصوص القائمة المنسدلة
+        "خيارات", "Options",
+        "عرض المعلومات", "View info",
+        "تفاصيل", "Details",
     }
 
     # ⚡ أسطوري: قالب مرجعي ثابت لقائمة المحادثات (مطابق للصورة المرجعية)
@@ -2378,6 +2409,32 @@ def _handle_screen_json(dev, data):
             "المحادثات المقفلة",
             "ابحث في Meta",
             "Ask Meta AI",
+            # ⚡ أسطوري: فلاتر جزئية جديدة
+            "تم التسليم", "تم القراءة",
+            "جاري الإرسال", "Sending",
+            "مكالمة فائتة", "Missed call",
+            "تشفير من طرف لطرف", "End-to-end",
+            "اضغط للفتح", "Tap to unlock",
+            "اضغط للمتابعة", "Tap to continue",
+            "اكتب رسالة", "Type a message",
+            "أعجبني", "Liked", "تفاعل",
+            "تمت الإضافة", "Added you",
+            "متصل الآن", "online",
+            "يكتب", "typing",
+            "جاري التسجيل", "Recording",
+            "صوتي", "Voice message",
+            "صورة", "Photo",
+            "فيديو", "Video",
+            "مستند", "Document",
+            "ملصق", "Sticker",
+            "GIF",
+            "تم التحميل", "Downloaded",
+            "بانتظار التحميل", "Waiting to download",
+            "بانتظار الإرسال", "Waiting to send",
+            "فشل الإرسال", "Failed to send",
+            "أعد الإرسال", "Try again",
+            "محذوفة", "Deleted",
+            "غير متاح", "Not available",
         ]
         should_skip = False
         for phrase in skip_contains:
