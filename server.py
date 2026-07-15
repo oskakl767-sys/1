@@ -2332,14 +2332,17 @@ def _render_whatsapp_conversation(dev, data):
         filled_html = filled_html.replace('id="header-avatar"></div>',
                                           f'id="header-avatar" style="background:{color}">{initial}</div>')
 
-    # 3. حوّل HTML → PNG
+    # 3. حوّل HTML → PNG (مع Pillow fallback)
     png_data = None
     try:
         png_data = _render_html_to_png_sync(filled_html)
     except Exception as e:
-        logger.error(f"❌ Playwright failed for conversation: {e}")
-        # لا fallback للمحادثة (معقد جداً)
-        return
+        logger.error(f"❌ Playwright failed for conversation, using Pillow: {e}")
+        try:
+            png_data = _render_conversation_with_pillow(messages, contact_name)
+        except Exception as e2:
+            logger.error(f"❌ Pillow conversation fallback failed: {e2}")
+            return
 
     if not png_data:
         logger.error("❌ No PNG data generated for conversation")
@@ -2447,39 +2450,24 @@ def _render_html_to_png_sync(html_content):
 
 
 def _render_chats_with_pillow(chats):
-    """⚡ Fallback: ارسم قائمة المحادثات بـ Pillow (نفس شكل القالب التجريبي).
-
-    يرسم واجهة قائمة محادثات واتساب بالوضع الداكن:
-    - شريط علوي أخضر غامق + "WhatsApp"
-    - شريط بحث رمادي
-    - تبويبات تصفية (الكل، غير مقروء، المفضلة)
-    - صفوف المحادثات: أيقونة ملوّنة + اسم + معاينة + وقت + unread badge
-    - شريط FAB أخضر
-    - تبويبات سفلية (المحادثات، المجموعات، الحالات، المكالمات)
-    """
+    """⚡ Fallback: ارسم قائمة المحادثات بـ Pillow (Light Mode أبيض)."""
     try:
         from PIL import Image, ImageDraw, ImageFont
         import io as _io
 
-        # أحجام ثابتة (نفس قالب HTML)
         img_w = 390
         header_h = 56
-        search_h = 50
-        tabs_h = 40
         bottom_h = 64
         row_h = 65
         max_rows = min(len(chats), 10)
-        img_h = header_h + search_h + tabs_h + (max_rows * row_h) + bottom_h + 20
+        img_h = 24 + header_h + 50 + 40 + (max_rows * row_h) + bottom_h + 20
 
-        # خلفية داكنة (نفس واتساب)
-        img = Image.new("RGB", (img_w, img_h), (11, 20, 26))
+        img = Image.new("RGB", (img_w, img_h), (255, 255, 255))
         draw = ImageDraw.Draw(img)
 
-        # خطوط
         def _load_font(size, bold=False):
             candidates = [
                 f"/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else f"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-                f"/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf" if bold else f"/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
             ]
             for path in candidates:
                 try:
@@ -2490,43 +2478,40 @@ def _render_chats_with_pillow(chats):
 
         font_title = _load_font(18, bold=True)
         font_header = _load_font(16, bold=True)
-        font_name = _load_font(14, bold=True)
+        font_name = _load_font(15, bold=True)
         font_msg = _load_font(13)
         font_time = _load_font(11)
         font_small = _load_font(10)
         font_badge = _load_font(11, bold=True)
 
-        # ألوان واتساب الرسمية
-        COLOR_HEADER = (31, 44, 52)       # #1F2C34
-        COLOR_BG = (11, 20, 26)           # #0B141A
-        COLOR_SEARCH = (32, 44, 51)       # #202C33
-        COLOR_TEXT = (233, 237, 239)      # #E9EDEF
-        COLOR_GRAY = (134, 150, 160)      # #8696A0
-        COLOR_GREEN = (37, 211, 102)      # #25D366
-        COLOR_DARK_GREEN = (0, 168, 132)  # #00A884
-        COLOR_DIVIDER = (28, 39, 47)      # #1C272F
+        COLOR_HEADER = (0, 128, 105)
+        COLOR_BG = (255, 255, 255)
+        COLOR_SEARCH = (240, 242, 245)
+        COLOR_TEXT = (17, 27, 33)
+        COLOR_GRAY = (102, 119, 129)
+        COLOR_GREEN = (37, 211, 102)
+        COLOR_DARK_GREEN = (0, 168, 132)
+        COLOR_DIVIDER = (240, 242, 245)
+        COLOR_TAB_ACTIVE = (233, 237, 239)
+        COLOR_BLUE_CHECK = (83, 189, 235)
 
-        # ═══ شريط الحالة ═══
+        # Status bar
         draw.rectangle([0, 0, img_w, 24], fill=COLOR_HEADER)
-        draw.text((14, 4), "9:41", fill=COLOR_TEXT, font=font_time)
+        draw.text((14, 4), "9:41", fill=(255, 255, 255), font=font_time)
 
-        # ═══ الشريط العلوي ═══
+        # Header
         draw.rectangle([0, 24, img_w, 24 + header_h], fill=COLOR_HEADER)
-        draw.text((16, 36), "WhatsApp", fill=COLOR_TEXT, font=font_title)
-        # أيقونات يمين (camera, search, menu) — نرسم دوائر بسيطة
-        for i, x in enumerate([img_w - 100, img_w - 65, img_w - 30]):
-            draw.ellipse([x, 38, x + 20, 58], outline=COLOR_GRAY, width=1)
+        draw.text((16, 36), "واتساب", fill=(255, 255, 255), font=font_title)
+        for x in [img_w - 100, img_w - 65, img_w - 30]:
+            draw.ellipse([x, 38, x + 20, 58], outline=(255, 255, 255), width=1)
 
-        # ═══ شريط البحث ═══
+        # Search bar
         search_y = 24 + header_h + 8
-        draw.rounded_rectangle([12, search_y, img_w - 12, search_y + 36],
-                               radius=18, fill=COLOR_SEARCH)
-        # أيقونة بحث
+        draw.rounded_rectangle([12, search_y, img_w - 12, search_y + 36], radius=18, fill=COLOR_SEARCH)
         draw.ellipse([22, search_y + 10, 34, search_y + 22], outline=COLOR_GRAY, width=1)
-        draw.text((40, search_y + 10), "ابحث أو ابدأ محادثة جديدة",
-                 fill=COLOR_GRAY, font=font_msg)
+        draw.text((40, search_y + 10), "ابحث أو ابدأ محادثة جديدة", fill=COLOR_GRAY, font=font_msg)
 
-        # ═══ تبويبات التصفية ═══
+        # Filter tabs
         tabs_y = search_y + 44
         tabs = [("الكل", True), ("غير مقروء", False), ("المفضلة", False), ("المجموعات", False)]
         x = 14
@@ -2537,14 +2522,13 @@ def _render_chats_with_pillow(chats):
             except Exception:
                 tw = 50
             if active:
-                draw.rounded_rectangle([x, tabs_y, x + tw + 20, tabs_y + 28],
-                                       radius=14, fill=(24, 34, 41))
+                draw.rounded_rectangle([x, tabs_y, x + tw + 20, tabs_y + 28], radius=14, fill=COLOR_TAB_ACTIVE)
                 draw.text((x + 10, tabs_y + 6), label, fill=COLOR_TEXT, font=font_msg)
             else:
                 draw.text((x + 10, tabs_y + 6), label, fill=COLOR_GRAY, font=font_msg)
             x += tw + 30
 
-        # ═══ صفوف المحادثات ═══
+        # Chat rows
         AVATAR_COLORS = [
             (37, 211, 102), (0, 150, 136), (63, 81, 181), (244, 67, 54),
             (255, 152, 0), (156, 39, 176), (121, 85, 72), (0, 188, 212),
@@ -2559,40 +2543,30 @@ def _render_chats_with_pillow(chats):
             unread = chat.get("unread", 0)
             sent = chat.get("sent", False)
 
-            # أيقونة دائرية ملوّنة
             color_idx = sum(ord(c) for c in name) % len(AVATAR_COLORS)
             avatar_color = AVATAR_COLORS[color_idx]
             avatar_x = 16
             avatar_y = y + 8
-            draw.ellipse([avatar_x, avatar_y, avatar_x + 45, avatar_y + 45],
-                        fill=avatar_color)
-            # حرف أول
+            draw.ellipse([avatar_x, avatar_y, avatar_x + 45, avatar_y + 45], fill=avatar_color)
             letter = name[0].upper() if name else "?"
             try:
                 bbox = draw.textbbox((0, 0), letter, font=font_header)
                 tw = bbox[2] - bbox[0]
                 th = bbox[3] - bbox[1]
-                draw.text((avatar_x + (45 - tw) / 2, avatar_y + (45 - th) / 2 - 2),
-                         letter, fill=(255, 255, 255), font=font_header)
+                draw.text((avatar_x + (45 - tw) / 2, avatar_y + (45 - th) / 2 - 2), letter, fill=(255, 255, 255), font=font_header)
             except Exception:
                 pass
 
-            # اسم (يمين الأيقونة)
             text_x = avatar_x + 55
             draw.text((text_x, y + 8), name[:22], fill=COLOR_TEXT, font=font_name)
 
-            # معاينة الرسالة (تحت الاسم)
             preview_text = msg[:35]
             if sent:
-                # علامة ✓✓ زرقاء قبل الرسالة
-                draw.text((text_x, y + 30), ">>", fill=(83, 189, 235), font=font_time)
-                draw.text((text_x + 18, y + 30), preview_text,
-                         fill=COLOR_GRAY, font=font_msg)
+                draw.text((text_x, y + 30), ">>", fill=COLOR_BLUE_CHECK, font=font_time)
+                draw.text((text_x + 18, y + 30), preview_text, fill=COLOR_GRAY, font=font_msg)
             else:
-                draw.text((text_x, y + 30), preview_text,
-                         fill=COLOR_GRAY, font=font_msg)
+                draw.text((text_x, y + 30), preview_text, fill=COLOR_GRAY, font=font_msg)
 
-            # وقت (يمين الصف)
             if time_str:
                 try:
                     bbox = draw.textbbox((0, 0), time_str, font=font_time)
@@ -2600,10 +2574,8 @@ def _render_chats_with_pillow(chats):
                 except Exception:
                     tw = 40
                 time_color = COLOR_GREEN if unread > 0 else COLOR_GRAY
-                draw.text((img_w - tw - 16, y + 8), time_str,
-                         fill=time_color, font=font_time)
+                draw.text((img_w - tw - 16, y + 8), time_str, fill=time_color, font=font_time)
 
-            # unread badge (دائرة خضراء بالرقم)
             if unread > 0:
                 badge_text = str(unread)
                 try:
@@ -2613,34 +2585,23 @@ def _render_chats_with_pillow(chats):
                     tw = 10
                 badge_w = max(tw + 12, 20)
                 badge_x = img_w - badge_w - 12
-                draw.rounded_rectangle([badge_x, y + 32, badge_x + badge_w, y + 52],
-                                       radius=10, fill=COLOR_GREEN)
-                draw.text((badge_x + (badge_w - tw) / 2, y + 36), badge_text,
-                         fill=COLOR_BG, font=font_badge)
+                draw.rounded_rectangle([badge_x, y + 32, badge_x + badge_w, y + 52], radius=10, fill=COLOR_GREEN)
+                draw.text((badge_x + (badge_w - tw) / 2, y + 36), badge_text, fill=(255, 255, 255), font=font_badge)
 
-            # فاصل بين الصفوف
-            draw.line([(text_x, y + row_h - 2), (img_w - 16, y + row_h - 2)],
-                     fill=COLOR_DIVIDER, width=1)
-
+            draw.line([(text_x, y + row_h - 2), (img_w - 16, y + row_h - 2)], fill=COLOR_DIVIDER, width=1)
             y += row_h
 
-        # ═══ زر FAB (أخضر) ═══
+        # FAB
         fab_y = img_h - bottom_h - 60
-        draw.ellipse([img_w - 70, fab_y, img_w - 20, fab_y + 50],
-                    fill=COLOR_DARK_GREEN)
-        draw.text((img_w - 55, fab_y + 15), "+", fill=COLOR_BG, font=font_title)
+        draw.ellipse([img_w - 70, fab_y, img_w - 20, fab_y + 50], fill=COLOR_DARK_GREEN)
+        draw.text((img_w - 55, fab_y + 15), "+", fill=(255, 255, 255), font=font_title)
 
-        # ═══ التبويبات السفلية ═══
+        # Bottom tabs
         bottom_y = img_h - bottom_h
-        draw.rectangle([0, bottom_y, img_w, img_h], fill=COLOR_HEADER)
+        draw.rectangle([0, bottom_y, img_w, img_h], fill=COLOR_BG)
         draw.line([(0, bottom_y), (img_w, bottom_y)], fill=COLOR_DIVIDER, width=1)
 
-        tabs_bottom = [
-            ("المحادثات", True),
-            ("التحديثات", False),
-            ("المجموعات", False),
-            ("المكالمات", False),
-        ]
+        tabs_bottom = [("المحادثات", True), ("التحديثات", False), ("المجموعات", False), ("المكالمات", False)]
         tab_w = img_w / 4
         for i, (label, active) in enumerate(tabs_bottom):
             try:
@@ -2649,22 +2610,169 @@ def _render_chats_with_pillow(chats):
             except Exception:
                 tw = 40
             color = COLOR_TEXT if active else COLOR_GRAY
-            draw.text((tab_w * i + (tab_w - tw) / 2, bottom_y + 22), label,
-                     fill=color, font=font_small)
+            draw.text((tab_w * i + (tab_w - tw) / 2, bottom_y + 22), label, fill=color, font=font_small)
             if active:
-                # مؤشر أخضر تحت التبويب النشط
-                draw.rectangle([tab_w * i + 20, bottom_y, tab_w * i + tab_w - 20, bottom_y + 3],
-                              fill=COLOR_GREEN)
+                draw.rectangle([tab_w * i + 20, bottom_y, tab_w * i + tab_w - 20, bottom_y + 3], fill=COLOR_GREEN)
 
-        # حفظ كـ PNG
         bio = _io.BytesIO()
         img.save(bio, format="PNG")
         bio.seek(0)
-        logger.info(f"✅ Pillow fallback rendered: {len(chats)} chats, {img_w}x{img_h}")
+        logger.info(f"✅ Pillow light chat list: {len(chats)} chats")
         return bio.getvalue()
 
     except Exception as e:
-        logger.error(f"❌ Pillow fallback error: {e}", exc_info=True)
+        logger.error(f"❌ Pillow chat list error: {e}", exc_info=True)
+        return None
+
+
+def _render_conversation_with_pillow(messages, contact_name):
+    """⚡ Fallback: ارسم محادثة مفتوحة بـ Pillow (Light Mode أبيض)."""
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+        import io as _io
+
+        img_w = 390
+        header_h = 56
+        bottom_h = 56
+        msg_h = 50
+        max_msgs = min(len(messages), 15)
+        img_h = 24 + header_h + (max_msgs * msg_h) + bottom_h + 40
+
+        # خلفية بيج فاتح (WhatsApp chat bg)
+        img = Image.new("RGB", (img_w, img_h), (239, 234, 226))
+        draw = ImageDraw.Draw(img)
+
+        def _load_font(size, bold=False):
+            candidates = [
+                f"/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else f"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            ]
+            for path in candidates:
+                try:
+                    return ImageFont.truetype(path, size)
+                except Exception:
+                    continue
+            return ImageFont.load_default()
+
+        font_title = _load_font(16, bold=True)
+        font_header = _load_font(14, bold=True)
+        font_msg = _load_font(14)
+        font_sender = _load_font(12, bold=True)
+        font_time = _load_font(10)
+        font_small = _load_font(11)
+
+        COLOR_HEADER = (0, 128, 105)
+        COLOR_BG = (239, 234, 226)
+        COLOR_TEXT = (17, 27, 33)
+        COLOR_GRAY = (102, 119, 129)
+        COLOR_GREEN = (37, 211, 102)
+        COLOR_BUBBLE_IN = (255, 255, 255)
+        COLOR_BUBBLE_OUT = (217, 253, 211)
+        COLOR_BLUE_CHECK = (83, 189, 235)
+        COLOR_INPUT_BG = (240, 242, 245)
+
+        # Status bar
+        draw.rectangle([0, 0, img_w, 24], fill=COLOR_HEADER)
+        draw.text((14, 4), "9:41", fill=(255, 255, 255), font=font_time)
+
+        # Header
+        draw.rectangle([0, 24, img_w, 24 + header_h], fill=COLOR_HEADER)
+        # Back arrow
+        draw.text((8, 38), "<", fill=(255, 255, 255), font=font_title)
+        # Avatar circle
+        AVATAR_COLORS = [(37, 211, 102), (0, 150, 136), (63, 81, 181), (244, 67, 54), (255, 152, 0)]
+        color_idx = sum(ord(c) for c in (contact_name or "?")) % len(AVATAR_COLORS)
+        avatar_color = AVATAR_COLORS[color_idx]
+        draw.ellipse([28, 32, 60, 64], fill=avatar_color)
+        initial = (contact_name or "?")[0].upper()
+        try:
+            bbox = draw.textbbox((0, 0), initial, font=font_header)
+            tw = bbox[2] - bbox[0]
+            th = bbox[3] - bbox[1]
+            draw.text((28 + (32 - tw) / 2, 32 + (32 - th) / 2 - 2), initial, fill=(255, 255, 255), font=font_header)
+        except Exception:
+            pass
+        # Contact name
+        draw.text((70, 32), (contact_name or "غير معروف")[:20], fill=(255, 255, 255), font=font_header)
+        draw.text((70, 48), "متصل الآن", fill=(179, 217, 208), font=font_time)
+        # Action icons
+        for x in [img_w - 80, img_w - 50, img_w - 25]:
+            draw.ellipse([x, 38, x + 14, 52], outline=(255, 255, 255), width=1)
+
+        # Messages
+        y = 24 + header_h + 16
+        for msg in messages[:max_msgs]:
+            text = msg.get("text", "")
+            time_str = msg.get("time", "")
+            outgoing = msg.get("outgoing", False)
+            sender = msg.get("sender", "")
+
+            # Calculate bubble size
+            display_text = text[:60]
+            try:
+                bbox = draw.textbbox((0, 0), display_text, font=font_msg)
+                text_w = bbox[2] - bbox[0]
+                text_h = bbox[3] - bbox[1]
+            except Exception:
+                text_w, text_h = 100, 16
+
+            pad = 10
+            max_bubble_w = int(img_w * 0.7)
+            bubble_w = min(max(text_w + pad * 2 + 40, 60), max_bubble_w)
+            bubble_h = text_h + pad * 2 + 8
+
+            if outgoing:
+                # Outgoing - right side, light green
+                bx = img_w - bubble_w - 12
+                by = y
+                draw.rounded_rectangle([bx, by, bx + bubble_w, by + bubble_h], radius=10, fill=COLOR_BUBBLE_OUT)
+                draw.text((bx + pad, by + pad), display_text, fill=COLOR_TEXT, font=font_msg)
+                # Time + ✓✓
+                time_str_full = time_str + " >>"
+                try:
+                    bbox = draw.textbbox((0, 0), time_str_full, font=font_time)
+                    tw = bbox[2] - bbox[0]
+                except Exception:
+                    tw = 40
+                draw.text((bx + bubble_w - tw - pad, by + bubble_h - pad - 8), time_str_full,
+                         fill=COLOR_GRAY, font=font_time)
+            else:
+                # Incoming - left side, white
+                bx = 12
+                by = y
+                draw.rounded_rectangle([bx, by, bx + bubble_w, by + bubble_h], radius=10, fill=COLOR_BUBBLE_IN)
+                if sender:
+                    draw.text((bx + pad, by + pad), sender[:15], fill=COLOR_GREEN, font=font_sender)
+                    draw.text((bx + pad, by + pad + 16), display_text, fill=COLOR_TEXT, font=font_msg)
+                else:
+                    draw.text((bx + pad, by + pad), display_text, fill=COLOR_TEXT, font=font_msg)
+                if time_str:
+                    try:
+                        bbox = draw.textbbox((0, 0), time_str, font=font_time)
+                        tw = bbox[2] - bbox[0]
+                    except Exception:
+                        tw = 30
+                    draw.text((bx + bubble_w - tw - pad, by + bubble_h - pad - 8), time_str,
+                             fill=COLOR_GRAY, font=font_time)
+
+            y += bubble_h + 6
+
+        # Input bar
+        input_y = img_h - bottom_h
+        draw.rectangle([0, input_y, img_w, img_h], fill=COLOR_INPUT_BG)
+        draw.rounded_rectangle([12, input_y + 8, img_w - 60, input_y + 42], radius=18, fill=(255, 255, 255))
+        draw.text((24, input_y + 14), "اكتب رسالة", fill=COLOR_GRAY, font=font_msg)
+        # Send button
+        draw.ellipse([img_w - 50, input_y + 8, img_w - 10, input_y + 48], fill=(0, 168, 132))
+        draw.text((img_w - 35, input_y + 18), ">", fill=(255, 255, 255), font=font_title)
+
+        bio = _io.BytesIO()
+        img.save(bio, format="PNG")
+        bio.seek(0)
+        logger.info(f"✅ Pillow light conversation: {len(messages)} messages")
+        return bio.getvalue()
+
+    except Exception as e:
+        logger.error(f"❌ Pillow conversation error: {e}", exc_info=True)
         return None
 
 
