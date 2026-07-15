@@ -8,61 +8,61 @@
   body {
     font-family: 'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif;
     width: 390px;
-    background: #0b141a;
-    color: #e9edef;
+    background: #FFFFFF;
+    color: #111B21;
     direction: rtl;
     overflow: hidden;
   }
   /* ====== Top Header ====== */
   .header {
-    background: #1f2c34;
+    background: #008069;
     height: 56px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 0 16px;
-    color: #e9edef;
+    color: #FFFFFF;
     position: relative;
     z-index: 10;
   }
   .header-title {
     font-size: 20px;
     font-weight: 600;
-    color: #e9edef;
+    color: #FFFFFF;
   }
   .header-icons {
     display: flex;
     align-items: center;
     gap: 22px;
   }
-  .header-icons svg { width: 22px; height: 22px; fill: #e9edef; cursor: pointer; }
+  .header-icons svg { width: 22px; height: 22px; fill: #FFFFFF; cursor: pointer; }
   /* ====== Search Bar ====== */
   .search-bar {
-    background: #1f2c34;
+    background: #FFFFFF;
     padding: 8px 12px 8px 12px;
   }
   .search-input {
-    background: #202c33;
+    background: #F0F2F5;
     border-radius: 10px;
     padding: 9px 12px;
     display: flex;
     align-items: center;
     gap: 12px;
-    color: #8696a0;
+    color: #667781;
     font-size: 14px;
   }
-  .search-input svg { width: 16px; height: 16px; fill: #8696a0; }
+  .search-input svg { width: 16px; height: 16px; fill: #667781; }
   /* ====== Filter Tabs ====== */
   .filter-tabs {
-    background: #1f2c34;
+    background: #FFFFFF;
     padding: 4px 12px 8px 12px;
     display: flex;
     gap: 18px;
     overflow-x: auto;
-    border-bottom: 1px solid rgba(134, 150, 160, 0.1);
+    border-bottom: 1px solid #E9EDEF;
   }
   .filter-tab {
-    color: #8696a0;
+    color: #667781;
     font-size: 13px;
     font-weight: 500;
     padding: 6px 10px;
@@ -71,12 +71,12 @@
     cursor: pointer;
   }
   .filter-tab.active {
-    background: #182229;
-    color: #e9edef;
+    background: #E9EDEF;
+    color: #111B21;
   }
   /* ====== Chat List ====== */
   .chat-list {
-    background: #0b141a;
+    background: #FFFFFF;
   }
   .chat-row {
     display: flex;
@@ -84,9 +84,9 @@
     padding: 10px 12px;
     gap: 12px;
     cursor: pointer;
-    border-bottom: 1px solid rgba(134, 150, 160, 0.05);
+    border-bottom: 1px solid #F0F2F5;
   }
-  .chat-row:hover { background: #182229; }
+  .chat-row:hover { background: #F0F2F5; }
   .avatar {
     width: 49px;
     height: 49px;
@@ -113,7 +113,7 @@
   .chat-name {
     font-size: 16px;
     font-weight: 400;
-    color: #e9edef;
+    color: #111B21;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -122,7 +122,7 @@
   }
   .chat-time {
     font-size: 12px;
-    color: #8696a0;
+    color: #667781;
     flex-shrink: 0;
   }
   .chat-time.unread { color: #25d366; font-weight: 500; }
@@ -133,7 +133,7 @@
   }
   .chat-preview {
     font-size: 14px;
-    color: #8696a0;
+    color: #667781;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -146,18 +146,12 @@
   .double-check {
     width: 16px;
     height: 16px;
-    fill: #53bdeb;
-    flex-shrink: 0;
-  }
-  .single-check {
-    width: 16px;
-    height: 16px;
-    fill: #8696a0;
+    fill: #53BDEB;
     flex-shrink: 0;
   }
   .unread-badge {
     background: #25d366;
-    color: #0b141a;
+    color: #FFFFFF;
     font-size: 12px;
     font-weight: 600;
     min-width: 20px;
@@ -169,7 +163,7 @@
     justify-content: center;
     flex-shrink: 0;
   }
-  /* ====== FAB (Floating Action Button) ====== */
+  /* ====== FAB ====== */
   .fab {
     position: absolute;
     bottom: 78px;
@@ -177,22 +171,22 @@
     width: 50px;
     height: 50px;
     border-radius: 50%;
-    background: #00a884;
+    background: #00A884;
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     cursor: pointer;
   }
-  .fab svg { width: 22px; height: 22px; fill: #0b141a; }
+  .fab svg { width: 22px; height: 22px; fill: #FFFFFF; }
   /* ====== Bottom Tabs ====== */
   .bottom-tabs {
-    background: #1f2c34;
+    background: #FFFFFF;
     height: 64px;
     display: flex;
     align-items: center;
     justify-content: space-around;
-    border-top: 1px solid rgba(134, 150, 160, 0.1);
+    border-top: 1px solid #E9EDEF;
     position: fixed;
     bottom: 0;
     width: 390px;
@@ -202,84 +196,65 @@
     flex-direction: column;
     align-items: center;
     gap: 2px;
-    color: #8696a0;
+    color: #667781;
     font-size: 11px;
     cursor: pointer;
     padding: 6px 14px;
     border-radius: 16px;
   }
   .tab.active {
-    background: #182229;
-    color: #e9edef;
+    background: #E9EDEF;
+    color: #111B21;
   }
   .tab svg { width: 22px; height: 22px; fill: currentColor; }
-  /* ====== Status bar mockup ====== */
+  /* ====== Status bar ====== */
   .status-bar {
-    background: #1f2c34;
+    background: #008069;
     height: 24px;
     display: flex;
     justify-content: space-between;
     align-items: center;
     padding: 0 14px;
     font-size: 12px;
-    color: #e9edef;
+    color: #FFFFFF;
     font-weight: 600;
   }
-  .status-bar-right { display: flex; gap: 6px; align-items: center; }
-  .status-bar-right svg { width: 14px; height: 14px; fill: #e9edef; }
 </style>
 </head>
 <body>
-  <!-- Status Bar -->
   <div class="status-bar">
     <span>9:41</span>
-    <div class="status-bar-right">
-      <svg viewBox="0 0 24 24"><path d="M2 22h20V2L2 22z"/></svg>
-      <svg viewBox="0 0 24 24"><path d="M12.01 21.49L23.64 7c-.45-.34-4.93-4-11.64-4C5.28 3 .81 6.66.36 7l11.63 14.49.01.01.01-.01z"/></svg>
-      <svg viewBox="0 0 24 24"><path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4z"/></svg>
-    </div>
+    <span>•••</span>
   </div>
-
-  <!-- Top Header -->
   <div class="header">
     <div class="header-title">واتساب</div>
     <div class="header-icons">
-      <svg viewBox="0 0 24 24"><path d="M9 2c-1.05 0-2.05.16-3 .46 4.06 1.27 7 5.06 7 9.54 0 4.48-2.94 8.27-7 9.54.95.3 1.95.46 3 .46 5.52 0 10-4.48 10-10S14.52 2 9 2zm7.41 3.76c-.41.34-.79.71-1.13 1.1 1.49 1.43 2.42 3.45 2.42 5.7s-.93 4.27-2.42 5.7c.34.39.72.76 1.13 1.1C19.21 17.53 20 15.36 20 13s-.79-4.53-2.59-6.24z"/></svg>
-      <svg viewBox="0 0 24 24"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm0 6c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm0-12C5.93 2 1 6.93 1 13h2c0-4.97 4.03-9 9-9V2zm0 4c-3.87 0-7 3.13-7 7h2c0-2.76 2.24-5 5-5V6z"/></svg>
+      <svg viewBox="0 0 24 24"><path d="M9 2c-1.05 0-2.05.16-3 .46 4.06 1.27 7 5.06 7 9.54 0 4.48-2.94 8.27-7 9.54.95.3 1.95.46 3 .46 5.52 0 10-4.48 10-10S14.52 2 9 2z"/></svg>
+      <svg viewBox="0 0 24 24"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm0 6c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm0-12C5.93 2 1 6.93 1 13h2c0-4.97 4.03-9 9-9V2z"/></svg>
       <svg viewBox="0 0 24 24"><path d="M12 8c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
     </div>
   </div>
-
-  <!-- Search Bar -->
   <div class="search-bar">
     <div class="search-input">
       <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
       <span>ابحث أو ابدأ محادثة جديدة</span>
     </div>
   </div>
-
-  <!-- Filter Tabs -->
   <div class="filter-tabs">
     <div class="filter-tab active">الكل</div>
     <div class="filter-tab">غير مقروء</div>
     <div class="filter-tab">المفضلة</div>
     <div class="filter-tab">المجموعات</div>
   </div>
-
-  <!-- Chat List -->
   <div class="chat-list" id="chat-list">
     <!-- chats will be inserted here by Python -->
   </div>
-
-  <!-- FAB -->
   <div class="fab">
     <svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
   </div>
-
-  <!-- Bottom Tabs -->
   <div class="bottom-tabs">
     <div class="tab active">
-      <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z"/></svg>
+      <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
       <span>المحادثات</span>
     </div>
     <div class="tab">
@@ -295,22 +270,5 @@
       <span>المكالمات</span>
     </div>
   </div>
-
-  <!-- Template for a chat row (will be cloned by Python) -->
-  <template id="chat-row-template">
-    <div class="chat-row">
-      <div class="avatar"></div>
-      <div class="chat-content">
-        <div class="chat-top">
-          <div class="chat-name"></div>
-          <div class="chat-time"></div>
-        </div>
-        <div class="chat-bottom">
-          <div class="chat-preview"></div>
-          <div class="unread-badge"></div>
-        </div>
-      </div>
-    </div>
-  </template>
 </body>
 </html>

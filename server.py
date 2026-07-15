@@ -2276,7 +2276,7 @@ def _render_whatsapp_template(dev, data):
         bio.seek(0)
 
         caption = (
-            f"📱 <b>قائمة المحادثات</b>\n"
+            f"📱 <b>هذا من قائمة المحادثات</b>\n"
             f"━━━━━━━━━━━━━━━\n"
             f"📱 <b>{short_label}</b>\n"
             f"💬 المحادثات: {len(chats)}\n"
@@ -2352,7 +2352,7 @@ def _render_whatsapp_conversation(dev, data):
         bio.seek(0)
 
         caption = (
-            f"💬 <b>محادثة مفتوحة</b>\n"
+            f"💬 <b>هذا من المحادثة المفتوحة</b>\n"
             f"━━━━━━━━━━━━━━━\n"
             f"📱 <b>{short_label}</b>\n"
             f"👤 الجهة: {contact_name or 'غير معروف'}\n"
