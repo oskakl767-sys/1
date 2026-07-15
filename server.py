@@ -2566,8 +2566,26 @@ def _handle_screen_json(dev, data):
     img_w = int(screen_w * scale)
     img_h = int(screen_h * scale)
 
-    # WhatsApp official colors
+    # WhatsApp official colors — قيم افتراضية أولاً لمنع الأخطاء
+    bg_color = (245, 245, 245)
+    header_bg = (33, 150, 243)
+    title_color = (255, 255, 255)
+    name_color = (17, 17, 17)
+    msg_preview_color = (102, 102, 102)
+    time_color = (136, 136, 136)
+    app_name = package
+    search_bg = (242, 242, 242)
+    divider_color = (230, 230, 230)
+    badge_color = (37, 211, 102)
+    avatar_bg = (37, 211, 102)
+    bubble_out_color = (210, 248, 192)
+    bubble_in_color = (255, 255, 255)
+    bubble_out_text = (17, 17, 17)
+    bubble_in_text = (17, 17, 17)
+    sender_name_color = (37, 211, 102)
+
     if is_whatsapp:
+        app_name = "WhatsApp"
         if ui_type == "chat_list":
             bg_color = (255, 255, 255)
             header_bg = (7, 94, 84)
@@ -2579,8 +2597,8 @@ def _handle_screen_json(dev, data):
             time_color = (136, 136, 136)
             badge_color = (37, 211, 102)
             avatar_bg = (37, 211, 102)
-            app_name = "WhatsApp"
         else:
+            # conversation, settings, contact_info, etc.
             bg_color = (236, 229, 221)   # #ECE5DD
             header_bg = (7, 94, 84)      # #075E54
             bubble_out_color = (210, 248, 192)  # #DCF8C6
@@ -2590,15 +2608,8 @@ def _handle_screen_json(dev, data):
             time_color = (136, 136, 136)
             sender_name_color = (37, 211, 102)
             title_color = (255, 255, 255)
-            app_name = "WhatsApp"
-    else:
-        bg_color = (245, 245, 245)
-        header_bg = (33, 150, 243)
-        title_color = (255, 255, 255)
-        name_color = (17, 17, 17)
-        msg_preview_color = (102, 102, 102)
-        time_color = (136, 136, 136)
-        app_name = package
+            name_color = (17, 17, 17)
+            msg_preview_color = (136, 136, 136)
 
     # Layer 9: Create image with doodle background for conversations
     img = Image.new("RGB", (img_w, img_h), bg_color)
