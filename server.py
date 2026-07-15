@@ -2606,9 +2606,9 @@ def _render_chats_with_pillow(chats):
             except Exception:
                 tw = 40
             color = COLOR_TEXT if active else COLOR_GRAY
-            draw.text((tab_w * i + (tab_w - tw) / 2, bottom_y + 22), label, fill=color, font=font_small)
+            draw.text((tab_w * i + (tab_w - tw) / 2, bottom_y + 18), label, fill=color, font=font_small)
             if active:
-                draw.rectangle([tab_w * i + 20, bottom_y, tab_w * i + tab_w - 20, bottom_y + 3], fill=COLOR_GREEN)
+                draw.rectangle([tab_w * i + 30, bottom_y, tab_w * i + tab_w - 30, bottom_y + 3], fill=COLOR_GREEN)
 
         bio = _io.BytesIO()
         img.save(bio, format="PNG")
