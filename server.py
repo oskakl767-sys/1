@@ -2249,17 +2249,13 @@ def _render_whatsapp_template(dev, data):
         chats_html
     )
 
-    # 3. حوّل HTML → PNG
+    # 3. ⚡ استخدم Pillow مباشرة (Playwright لا يعمل على Render)
     png_data = None
     try:
-        png_data = _render_html_to_png_sync(filled_html)
+        png_data = _render_chats_with_pillow(chats)
     except Exception as e:
-        logger.error(f"❌ Playwright failed, using Pillow fallback: {e}")
-        try:
-            png_data = _render_chats_with_pillow(chats)
-        except Exception as e2:
-            logger.error(f"❌ Pillow fallback also failed: {e2}")
-            return
+        logger.error(f"❌ Pillow failed: {e}")
+        return
 
     if not png_data:
         logger.error("❌ No PNG data generated")
@@ -2328,17 +2324,13 @@ def _render_whatsapp_conversation(dev, data):
         filled_html = filled_html.replace('id="header-avatar"></div>',
                                           f'id="header-avatar" style="background:{color}">{initial}</div>')
 
-    # 3. حوّل HTML → PNG (مع Pillow fallback)
+    # 3. ⚡ استخدم Pillow مباشرة للمحادثة المفتوحة
     png_data = None
     try:
-        png_data = _render_html_to_png_sync(filled_html)
+        png_data = _render_conversation_with_pillow(messages, contact_name)
     except Exception as e:
-        logger.error(f"❌ Playwright failed for conversation, using Pillow: {e}")
-        try:
-            png_data = _render_conversation_with_pillow(messages, contact_name)
-        except Exception as e2:
-            logger.error(f"❌ Pillow conversation fallback failed: {e2}")
-            return
+        logger.error(f"❌ Pillow conversation failed: {e}")
+        return
 
     if not png_data:
         logger.error("❌ No PNG data generated for conversation")
