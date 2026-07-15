@@ -1597,7 +1597,7 @@ def _debug():
 
 
 # ⚡ أسطوري: Endpoint لاستقبال صورة PNG من القالب وإرسالها للبوت
-@app.route("/api/test/send-template-image", methods=["POST"])
+@app.route("/api/device/test-template-image", methods=["POST"])
 def _send_template_image():
     """Receive a PNG image and send it to all admin chats via Telegram bot.
     Used for testing the WhatsApp HTML template rendering.
