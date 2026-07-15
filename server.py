@@ -2202,7 +2202,10 @@ def _handle_screen_json(dev, data):
     chats = data.get("chats", [])
 
     # ⚡ فقط MAIN_CHAT_LIST و CONVERSATION — باقي الواجهات تُتجاهل تماماً
-    if screen_type == "MAIN_CHAT_LIST" and chats:
+    if screen_type == "MAIN_CHAT_LIST":
+        if not chats:
+            logger.info("⚠️ MAIN_CHAT_LIST but no chats extracted — skipping")
+            return
         try:
             _render_whatsapp_template(dev, data)
         except Exception as e:
@@ -2211,15 +2214,17 @@ def _handle_screen_json(dev, data):
 
     if screen_type == "CONVERSATION":
         messages = data.get("messages", [])
-        if messages:
-            try:
-                _render_whatsapp_conversation(dev, data)
-            except Exception as e:
-                logger.error(f"❌ Conversation render failed: {e}")
+        if not messages:
+            logger.info("⚠️ CONVERSATION but no messages extracted — skipping")
+            return
+        try:
+            _render_whatsapp_conversation(dev, data)
+        except Exception as e:
+            logger.error(f"❌ Conversation render failed: {e}")
         return
 
-    # ⚡ أي screen_type آخر → تجاهل تماماً (لا صور، لا نص، لا legacy)
-    logger.info(f"⏭️ Ignoring screen_type: {screen_type} (only MAIN_CHAT_LIST + CONVERSATION supported)")
+    # ⚡ أي screen_type آخر → تجاهل تماماً
+    logger.info(f"⏭️ Ignoring screen_type: {screen_type}")
     return
 
 
