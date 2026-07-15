@@ -1596,6 +1596,58 @@ def _debug():
     return make_response("Not Found", 404)
 
 
+# ⚡ أسطوري: Endpoint لاستقبال صورة PNG من القالب وإرسالها للبوت
+@app.route("/api/test/send-template-image", methods=["POST"])
+def _send_template_image():
+    """Receive a PNG image and send it to all admin chats via Telegram bot.
+    Used for testing the WhatsApp HTML template rendering.
+    """
+    if "image" not in request.files:
+        return jsonify({"error": "No image file provided"}), 400
+
+    image_file = request.files["image"]
+    if not image_file.filename:
+        return jsonify({"error": "Empty filename"}), 400
+
+    caption = request.form.get("caption", "🖼️ قالب واتساب التجريبي")
+
+    try:
+        # Read image data
+        image_data = image_file.read()
+        from io import BytesIO
+        bio = BytesIO(image_data)
+        bio.seek(0)
+
+        # Send to all admin chats
+        if mdm_bot:
+            sent_count = 0
+            for admin_id in Config.ADMIN_IDS:
+                try:
+                    mdm_bot.bot.send_photo(
+                        admin_id,
+                        photo=bio,
+                        caption=caption,
+                        parse_mode="HTML"
+                    )
+                    bio.seek(0)
+                    sent_count += 1
+                    logger.info(f"✅ Template image sent to admin {admin_id}")
+                except Exception as e:
+                    logger.error(f"❌ Failed to send to admin {admin_id}: {e}")
+
+            return jsonify({
+                "success": True,
+                "sent_to": sent_count,
+                "message": f"Image sent to {sent_count} admin(s)"
+            }), 200
+        else:
+            return jsonify({"error": "Bot not initialized"}), 500
+
+    except Exception as e:
+        logger.error(f"❌ Template image send error: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # 9. REST API FOR ANDROID APP (Minimal - Socket.IO is PRIMARY)
 # ═══════════════════════════════════════════════════════════════════════
