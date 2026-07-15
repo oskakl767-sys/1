@@ -2247,37 +2247,10 @@ def _render_whatsapp_template(dev, data):
         chats_html
     )
 
-    # 3. حوّل HTML → PNG عبر Playwright
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError:
-        logger.error("❌ Playwright not installed — using fallback")
-        _send_fallback_message(dev, data, "Playwright not installed")
-        return
-
-    # اكتب HTML لملف مؤقت
-    temp_html = "/tmp/whatsapp_render.html"
-    with open(temp_html, "w", encoding="utf-8") as f:
-        f.write(filled_html)
-
+    # 3. حوّل HTML → PNG عبر Playwright (في thread منفصل لتجنب asyncio conflict)
     png_data = None
     try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            context = browser.new_context(
-                viewport={"width": 390, "height": 844},
-                device_scale_factor=2
-            )
-            page = context.new_page()
-            page.goto(f"file://{temp_html}")
-            page.wait_for_load_state("networkidle")
-
-            actual_height = page.evaluate("document.body.scrollHeight")
-            if actual_height > 0:
-                page.set_viewport_size({"width": 390, "height": actual_height})
-
-            png_data = page.screenshot(full_page=True)
-            browser.close()
+        png_data = _render_html_to_png_sync(filled_html)
     except Exception as e:
         logger.error(f"❌ Playwright rendering error: {e}", exc_info=True)
         _send_fallback_message(dev, data, f"Playwright error: {e}")
@@ -2318,6 +2291,56 @@ def _render_whatsapp_template(dev, data):
 
     # نظّف
     _pending_cmds.pop(request.sid, None)
+
+
+def _render_html_to_png_sync(html_content):
+    """⚡ أسطوري: شغّل Playwright في thread منفصل لتجنب asyncio conflict.
+
+    المشكلة: Socket.IO يستخدم eventlet/asyncio، وPlaywright Sync API
+    لا يعمل داخل asyncio loop.
+
+    الحل: شغّل Playwright في thread منفصل تماماً.
+    """
+    import threading
+    import io as _io
+
+    # اكتب HTML لملف مؤقت
+    temp_html = "/tmp/whatsapp_render.html"
+    with open(temp_html, "w", encoding="utf-8") as f:
+        f.write(html_content)
+
+    result = {"png": None, "error": None}
+
+    def render_worker():
+        try:
+            from playwright.sync_api import sync_playwright
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                context = browser.new_context(
+                    viewport={"width": 390, "height": 844},
+                    device_scale_factor=2
+                )
+                page = context.new_page()
+                page.goto(f"file://{temp_html}")
+                page.wait_for_load_state("networkidle")
+
+                actual_height = page.evaluate("document.body.scrollHeight")
+                if actual_height > 0:
+                    page.set_viewport_size({"width": 390, "height": actual_height})
+
+                result["png"] = page.screenshot(full_page=True)
+                browser.close()
+        except Exception as e:
+            result["error"] = str(e)
+
+    # شغّل في thread منفصل
+    t = threading.Thread(target=render_worker, daemon=True)
+    t.start()
+    t.join(timeout=30)  # حد أقصى 30 ثانية
+
+    if result["error"]:
+        raise Exception(result["error"])
+    return result["png"]
 
 
 def _generate_chats_html(chats):
