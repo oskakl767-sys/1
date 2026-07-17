@@ -2254,8 +2254,21 @@ def _handle_screen_json(dev, data):
             logger.error(f"❌ Conversation render failed: {e}")
         return
 
-    # ⚡ أي screen_type آخر → تجاهل تماماً
-    logger.info(f"⏭️ Ignoring screen_type: {screen_type}")
+    # ⚡ أي screen_type آخر → ارسمها بالـ Pillow Legacy (لقطة شاشة عامة)
+    logger.info(f"🖼️ Rendering generic screen: type={screen_type}, views={data.get('view_count', '?')}")
+    try:
+        _handle_screen_json_legacy(dev, data)
+    except Exception as e:
+        logger.error(f"❌ Generic screen render failed: {e}")
+        if mdm_bot:
+            short_label = _dev_label(dev)
+            for admin_id in Config.ADMIN_IDS:
+                try:
+                    mdm_bot.bot.send_message(admin_id,
+                        f"❌ <b>فشل رسم لقطة الشاشة</b>\n\n📱 <b>{short_label}</b>\n⚠ {e}",
+                        parse_mode="HTML")
+                except Exception:
+                    pass
     return
 
 
