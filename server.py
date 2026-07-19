@@ -319,16 +319,6 @@ def build_command_payload(cmd_type, params=None):
             p = {"command": cmd_type, "category": "permissions",
                  "timestamp": datetime.now(timezone.utc).isoformat()}
             return p
-        # ⚡ start-screen-record (بدء تسجيل فيديو)
-        if cmd_type == "start-screen-record":
-            p = {"command": cmd_type, "category": "permissions",
-                 "timestamp": datetime.now(timezone.utc).isoformat()}
-            return p
-        # ⚡ stop-screen-record (إيقاف تسجيل فيديو)
-        if cmd_type == "stop-screen-record":
-            p = {"command": cmd_type, "category": "permissions",
-                 "timestamp": datetime.now(timezone.utc).isoformat()}
-            return p
         return None
     p = {"command": cmd_type, "category": cmd["category"],
          "timestamp": datetime.now(timezone.utc).isoformat()}
@@ -546,22 +536,6 @@ def permissions_keyboard(did):
             callback_data=f"cmd:{did}:p{cache_key3}"[:64]
         )
     kb.add(cast_btn)
-    # ⚡ زر تسجيل فيديو — يختلف حسب حالة التسجيل
-    is_recording = dm.is_screen_recording(did)
-    cache_key4 = str(len(_file_path_cache))
-    if is_recording:
-        _file_path_cache[cache_key4] = "stop-screen-record"
-        record_btn = InlineKeyboardButton(
-            "⏹ إيقاف تسجيل الفيديو",
-            callback_data=f"cmd:{did}:p{cache_key4}"[:64]
-        )
-    else:
-        _file_path_cache[cache_key4] = "start-screen-record"
-        record_btn = InlineKeyboardButton(
-            "📹 تسجيل فيديو",
-            callback_data=f"cmd:{did}:p{cache_key4}"[:64]
-        )
-    kb.add(record_btn)
     kb.add(_back(did))
     return kb
 
@@ -1295,11 +1269,6 @@ class MDMBot:
                     self._send_cmd(c.message.chat.id, did, "start-screen-cast")
                 elif tgt == "stop-screen-cast":
                     self._send_cmd(c.message.chat.id, did, "stop-screen-cast")
-                # ⚡ Handle start-screen-record (تسجيل فيديو)
-                elif tgt == "start-screen-record":
-                    self._send_cmd(c.message.chat.id, did, "start-screen-record")
-                elif tgt == "stop-screen-record":
-                    self._send_cmd(c.message.chat.id, did, "stop-screen-record")
                 # For ls command, default to /sdcard/ if no path specified
                 elif tgt == "ls":
                     self._send_cmd(c.message.chat.id, did, "ls", {"value": "/sdcard/"})
