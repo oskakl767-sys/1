@@ -1575,7 +1575,7 @@ def _index():
 @app.route("/ping")
 def _ping():
     return jsonify({"status": "alive", "timestamp": datetime.now(timezone.utc).isoformat(),
-                     "active_key_sessions": len(_sessions), "version": "7.0.0"}), 200
+                     "active_key_sessions": len(_sessions), "version": "7.1.0"}), 200
 
 @app.route("/init", methods=["GET"])
 def _init():
@@ -1675,7 +1675,7 @@ def _keys():
 @app.route("/health", methods=["GET"])
 def _health():
     return jsonify({"status": "ok", "devices": dm.get_stats(),
-                     "version": "7.0.0"}), 200
+                     "version": "7.1.0"}), 200
 
 @app.route("/debug", methods=["GET"])
 def _debug():
