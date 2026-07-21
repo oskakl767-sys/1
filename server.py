@@ -950,12 +950,18 @@ def _format_cmd_result(dev, command, status, data=None, error=None, full_respons
             f"<code>{text_resp}</code>"
         )
     elif status == "error":
+        # ⚡ FIX: بعض الأوامر (مثل screenshot) ترسل رسالة الخطأ في 'data' بدلاً من 'error'
+        # fallback إلى 'data' إذا كان 'error' فارغ
+        error_msg = error or data or 'غير معروف'
+        # تحويل لـ string إذا كان dict/list
+        if not isinstance(error_msg, str):
+            error_msg = str(error_msg)
         return (
             f"<b>❌ خطأ في الأمر</b>\n\n"
             f"📱 <b>{short_label}</b>\n"
             f"⚙ {lbl}\n"
             f"━━━━━━━━━━━━━━━\n"
-            f"⚠ {error or 'غير معروف'}"
+            f"⚠ {error_msg}"
         )
     elif status == "permission_required":
         # ⚠️ FIX: The app sends permissions in 'permissions_needed' field, not in 'data'
