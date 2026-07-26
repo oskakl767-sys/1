@@ -1574,23 +1574,21 @@ _camera_streams: dict = {}  # stream_id → {"jpeg": bytes, "timestamp": float, 
 
 @app.route("/live/<stream_id>")
 def _live_stream_page(stream_id):
-    """صفحة HTML لعرض البث المباشر - تدعم كاميرتين"""
-    # تحقق إذا البث نشط (قد يكون back أو front)
-    if stream_id not in _camera_streams:
-        return make_response("<h1>البث غير نشط</h1><p>Stream ID: " + stream_id + "</p>", 404)
+    """صفحة HTML تعرض بث الكاميرا - AJAX polling (أسرع من MJPEG)"""
+    # ابحث عن أي بث نشط
+    active_back = None
+    active_front = None
+    for sid in _camera_streams:
+        if "BACK" in sid:
+            active_back = sid
+        elif "FRONT" in sid:
+            active_front = sid
 
-    # ابحث عن البث الآخر (إذا كان back، ابحث عن front والعكس)
-    other_stream = None
-    if "BACK" in stream_id:
-        for sid in _camera_streams:
-            if "FRONT" in sid:
-                other_stream = sid
-                break
-    elif "FRONT" in stream_id:
-        for sid in _camera_streams:
-            if "BACK" in sid:
-                other_stream = sid
-                break
+    if not active_back and not active_front:
+        return make_response("<h1>البث غير نشط</h1>", 404)
+
+    back_id = active_back or ""
+    front_id = active_front or ""
 
     html = f"""<!DOCTYPE html>
 <html>
@@ -1602,82 +1600,71 @@ def _live_stream_page(stream_id):
         body {{ margin:0; background:#111; color:#fff; font-family:Arial,sans-serif; }}
         .header {{ background:#222; padding:10px; text-align:center; }}
         .cameras {{ display:flex; flex-wrap:wrap; justify-content:center; padding:10px; gap:10px; }}
-        .camera {{ flex:1; min-width:300px; max-width:50%; }}
-        .camera h3 {{ text-align:center; margin:5px 0; }}
-        img {{ width:100%; border:2px solid #333; border-radius:5px; }}
+        .camera {{ flex:1; min-width:300px; max-width:50%; text-align:center; }}
+        .camera h3 {{ margin:5px 0; }}
+        .frame {{ width:100%; background:#000; border:2px solid #333; border-radius:5px; min-height:200px; }}
+        .status {{ font-size:12px; color:#888; }}
     </style>
 </head>
 <body>
-    <div class="header">
-        <h2>📺 بث الكاميرا المباشر</h2>
-    </div>
-    <div class="cameras">"""
-    
-    if "BACK" in stream_id or "FRONT" in stream_id:
-        # عرض الكاميرتين
-        back_id = stream_id if "BACK" in stream_id else (other_stream or stream_id)
-        front_id = stream_id if "FRONT" in stream_id else (other_stream or stream_id)
-        
-        html += f"""
+    <div class="header"><h2>📺 بث الكاميرا المباشر</h2></div>
+    <div class="cameras">
         <div class="camera">
             <h3>📷 الكاميرا الخلفية</h3>
-            <img src="/stream/{back_id}" alt="Back Camera" />
-        </div>"""
-        
-        if front_id != back_id and front_id in _camera_streams:
-            html += f"""
+            <img id="back" class="frame" src="" alt="انتظار..." />
+            <div class="status" id="back_status">جاري التحميل...</div>
+        </div>
         <div class="camera">
             <h3>🤳 الكاميرا الأمامية</h3>
-            <img src="/stream/{front_id}" alt="Front Camera" />
-        </div>"""
-    else:
-        html += f"""
-        <div class="camera">
-            <img src="/stream/{stream_id}" alt="Camera" />
-        </div>"""
-
-    html += """
+            <img id="front" class="frame" src="" alt="انتظار..." />
+            <div class="status" id="front_status">جاري التحميل...</div>
+        </div>
     </div>
+    <script>
+        var backId = "{back_id}";
+        var frontId = "{front_id}";
+        var backCount = 0, frontCount = 0;
+
+        function poll(camera, imgId, statusId) {{
+            fetch('/frame/' + camera)
+                .then(r => r.blob())
+                .then(blob => {{
+                    if (blob.size > 100) {{
+                        var url = URL.createObjectURL(blob);
+                        document.getElementById(imgId).src = url;
+                        if (imgId === 'back') backCount++;
+                        else frontCount++;
+                        document.getElementById(statusId).textContent = 
+                            '✅ مباشر - إطار #' + (imgId === 'back' ? backCount : frontCount);
+                    }} else {{
+                        document.getElementById(statusId).textContent = '⏳ في انتظار الإطارات...';
+                    }}
+                }})
+                .catch(err => {{
+                    document.getElementById(statusId).textContent = '❌ خطأ: ' + err;
+                }});
+        }}
+
+        setInterval(function() {{
+            if (backId) poll(backId, 'back', 'back_status');
+            if (frontId) poll(frontId, 'front', 'front_status');
+        }}, 300);
+    </script>
 </body>
 </html>"""
     return html
 
 
-@app.route("/stream/<stream_id>")
-def _mjpeg_stream(stream_id):
-    """MJPEG stream - بث الإطارات كـ multipart/x-mixed-replace"""
+@app.route("/frame/<stream_id>")
+def _get_frame(stream_id):
+    """يُرجع أحدث إطار كصورة JPEG"""
     if stream_id not in _camera_streams:
-        return make_response("Stream not found", 404)
-
-    def generate():
-        boundary = "frameboundary"
-        last_frame = None
-        while stream_id in _camera_streams:
-            info = _camera_streams.get(stream_id)
-            if info and info.get("jpeg"):
-                frame = info["jpeg"]
-                if frame != last_frame:
-                    last_frame = frame
-                    yield (f"--{boundary}\r\n"
-                           f"Content-Type: image/jpeg\r\n"
-                           f"Content-Length: {len(frame)}\r\n\r\n").encode() + frame + b"\r\n"
-            eventlet.sleep(0.1)  # 100ms
-
-    return Response(generate(), mimetype="multipart/x-mixed-replace; boundary=frameboundary")
-
-
-@app.route("/stream/<stream_id>/info")
-def _stream_info(stream_id):
-    """معلومات البث"""
-    if stream_id not in _camera_streams:
-        return jsonify({"error": "not found"}), 404
+        return make_response("", 404)
     info = _camera_streams[stream_id]
-    return jsonify({
-        "stream_id": stream_id,
-        "device_id": info.get("device_id", "?"),
-        "last_update": datetime.fromtimestamp(info.get("timestamp", 0)).strftime("%H:%M:%S"),
-        "frame_size": len(info.get("jpeg", b""))
-    })
+    jpeg = info.get("jpeg")
+    if not jpeg:
+        return make_response("", 404)
+    return Response(jpeg, mimetype="image/jpeg")
 
 
 @socketio.on("camera_frame")
