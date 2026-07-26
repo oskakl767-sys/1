@@ -1645,10 +1645,11 @@ def _live_stream_page(stream_id):
                 }});
         }}
 
+        // ⚡ polling سريع جداً (150ms = ~6 FPS)
         setInterval(function() {{
             if (backId) poll(backId, 'back', 'back_status');
             if (frontId) poll(frontId, 'front', 'front_status');
-        }}, 300);
+        }}, 150);
     </script>
 </body>
 </html>"""
