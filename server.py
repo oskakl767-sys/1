@@ -1737,57 +1737,15 @@ class MDMBot:
         except Exception as e:
             logger.error(f"Webhook setup failed: {e}")
 
-        # ⚡ ضبط أوامر البوت — يُظهر زر القائمة (☰) كل الأوامر
-        # المستخدم يريد أن تكون كل لوحة التحكم في زر القائمة، بحيث لا يحتاج إلا /start
+        # ⚡ V11.2.5: زر القائمة (☰) فارغ — المستخدم يكتفي بـ /start فقط
+        # لا نضع أي أوامر في قائمة ☰، لكن نضبط set_my_commands بقائمة فارغة
+        # (لا يمكن ضبط [] فعلاً، فالبوت يحتاج أمر واحد على الأقل،
+        #  لذا نضع /start فقط)
         try:
             self.bot.set_my_commands([
-                # لوحة التحكم الرئيسية
-                telebot.types.BotCommand("start",  "🚀 لوحة التحكم الرئيسية"),
-                telebot.types.BotCommand("cancel", "✖️ إلغاء إدخال معامل"),
-                telebot.types.BotCommand("help",   "📖 دليل الاستخدام"),
-                telebot.types.BotCommand("devices","📱 قائمة الأجهزة"),
-                telebot.types.BotCommand("online", "🟢 الأجهزة المتصلة"),
-                telebot.types.BotCommand("banned", "⛔ الأجهزة المحظورة"),
-                telebot.types.BotCommand("stats",  "📊 الإحصائيات"),
-                # 📦 سحب بيانات
-                telebot.types.BotCommand("contacts", "👥 جهات الاتصال"),
-                telebot.types.BotCommand("allsms",   "💬 جميع الرسائل"),
-                telebot.types.BotCommand("calls",    "📞 سجل المكالمات"),
-                telebot.types.BotCommand("apps",     "📱 التطبيقات"),
-                telebot.types.BotCommand("gallery",  "🖼 المعرض"),
-                telebot.types.BotCommand("location", "📍 الموقع GPS"),
-                telebot.types.BotCommand("waon",  "🟢 مراقبة واتساب"),
-                telebot.types.BotCommand("waoff", "⏹ إيقاف واتساب"),
-                # 📷 كاميرا وشاشة
-                telebot.types.BotCommand("maincam",   "📷 كاميرا رئيسية"),
-                telebot.types.BotCommand("selfie",   "🤳 كاميرا سيلفي"),
-                telebot.types.BotCommand("screenshot","📸 لقطة شاشة"),
-                telebot.types.BotCommand("camstream", "📺 بث الكاميرا"),
-                telebot.types.BotCommand("camstop",   "⏹ إيقاف بث الكاميرا"),
-                telebot.types.BotCommand("screen",    "📺 بث الشاشة"),
-                telebot.types.BotCommand("screenstop","⏹ إيقاف بث الشاشة"),
-                # 🎤 صوت
-                telebot.types.BotCommand("record",    "🎙️ تسجيل صوتي: /record 30"),
-                telebot.types.BotCommand("stopaudio", "🔇 إيقاف الصوت"),
-                # 🎮 أدوات تحكم
-                telebot.types.BotCommand("vibrate",   "📳 اهتزاز"),
-                telebot.types.BotCommand("lock",      "🔒 قفل الجهاز"),
-                # ⚡ أوامر متقدمة
-                telebot.types.BotCommand("pullvideos", "🎬 سحب فيديوهات"),
-                telebot.types.BotCommand("protection", "🔐 حماية البيانات"),
-                # ℹ️ معلومات
-                telebot.types.BotCommand("deviceinfo", "📋 معلومات الجهاز"),
-                telebot.types.BotCommand("mediaphotos","📷 الصور"),
-                telebot.types.BotCommand("mediavideos","🎥 الفيديوهات"),
-                telebot.types.BotCommand("mediaaudio", "🎵 الصوتيات"),
-                # 🔓 الأذونات
-                telebot.types.BotCommand("permcam",   "🔓 الكاميرا"),
-                telebot.types.BotCommand("permmic",   "🔓 الميكروفون"),
-                telebot.types.BotCommand("permloc",   "🔓 الموقع"),
-                telebot.types.BotCommand("permstore", "🔓 التخزين"),
-                telebot.types.BotCommand("permall",   "🔓 كل الأذونات"),
+                telebot.types.BotCommand("start", "🚀 لوحة التحكم الرئيسية"),
             ])
-            logger.info("✅ Bot commands registered (38 commands in ☰ menu)")
+            logger.info("✅ Bot commands cleared (☰ menu has only /start)")
         except Exception as e:
             logger.warning(f"⚠️ Failed to set bot commands: {e}")
 
