@@ -1228,6 +1228,7 @@ class MDMBot:
             if a == "kb":
                 fn = _KB.get(tgt)
                 if not fn:
+                    bot.answer_callback_query(c.id, "⚠️ غير معروف")
                     return
                 if tgt == "control_panel":
                     dev = self.dm.get_device(did)
@@ -1236,8 +1237,13 @@ class MDMBot:
                     kb = fn(did)
                 dev = self.dm.get_device(did)
                 text = _format_category_header(tgt, dev)
-                bot.edit_message_text(text, c.message.chat.id, c.message.message_id,
-                                       reply_markup=kb, parse_mode="HTML")
+                try:
+                    bot.edit_message_text(text, c.message.chat.id, c.message.message_id,
+                                           reply_markup=kb, parse_mode="HTML")
+                except Exception as e:
+                    # إذا فشل edit (مثلاً المحتوى متطابق)، أرسل رسالة جديدة
+                    logger.warning(f"edit_message_text failed: {e}")
+                    bot.send_message(c.message.chat.id, text, parse_mode="HTML", reply_markup=kb)
                 bot.answer_callback_query(c.id)
 
             elif a == "cmd":
