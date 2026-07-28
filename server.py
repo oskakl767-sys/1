@@ -1459,6 +1459,21 @@ class MDMBot:
         except Exception as e:
             logger.error(f"Webhook setup failed: {e}")
 
+        # ⚡ ضبط أوامر البوت — يُظهر زر القائمة (☰) قائمة الأوامر
+        try:
+            self.bot.set_my_commands([
+                telebot.types.BotCommand("start", "🚀 لوحة التحكم الرئيسية"),
+                telebot.types.BotCommand("help", "📖 دليل الاستخدام"),
+                telebot.types.BotCommand("devices", "📱 قائمة الأجهزة"),
+                telebot.types.BotCommand("online", "🟢 الأجهزة المتصلة"),
+                telebot.types.BotCommand("banned", "⛔ الأجهزة المحظورة"),
+                telebot.types.BotCommand("stats", "📊 الإحصائيات"),
+                telebot.types.BotCommand("cancel", "✖️ إلغاء إدخال معامل"),
+            ])
+            logger.info("✅ Bot commands registered (Menu button ☰ now works)")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to set bot commands: {e}")
+
     def process_update(self, update_data):
         """Process a Telegram update using gevent for async compatibility"""
         def _process():
