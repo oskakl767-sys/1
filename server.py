@@ -1036,7 +1036,7 @@ class MDMBot:
             # Build beautiful dashboard
             dashboard_text = _format_dashboard(stats, devs)
 
-            # ⚡ إضافة Reply Keyboard (أزرار دائمة أسفل الشاشة)
+            # ⚡ إرسال Reply Keyboard في رسالة منفصلة (مهم!)
             reply_kb = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
             reply_kb.add(
                 telebot.types.KeyboardButton("🎮 لوحة التحكم"),
@@ -1050,6 +1050,8 @@ class MDMBot:
                 telebot.types.KeyboardButton("⚡ أوامر متقدمة"),
                 telebot.types.KeyboardButton("ℹ️ معلومات")
             )
+            # ⚡ إرسال Reply Keyboard أولاً في رسالة منفصلة
+            bot.send_message(m.chat.id, "📱 <b>أزرار التحكم السريع</b>\nاستخدم الأزرار أدناه:", parse_mode="HTML", reply_markup=reply_kb)
 
             # Build inline keyboard based on device state
             if not devs:
