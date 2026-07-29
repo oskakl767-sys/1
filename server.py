@@ -1875,8 +1875,9 @@ _camera_streams: dict = {}  # stream_id → {"jpeg": bytes, "timestamp": float, 
 
 @app.route("/live/<stream_id>")
 def _live_stream_page(stream_id):
-    """صفحة HTML تعرض بث الكاميرا - AJAX polling (أسرع من MJPEG)"""
-    # ابحث عن أي بث نشط
+    """V11.2.18: صفحة HTML تعرض بث الكاميرا — تعمل دائماً (لا تحقق من النشاط)"""
+    # V11.2.18: لا نتحقق من البث (Render free tier قد يُعيد التشغيل)
+    # الصفحة تنتظر الإطارات عبر WebSocket
     active_back = None
     active_front = None
     for sid in _camera_streams:
@@ -1884,9 +1885,17 @@ def _live_stream_page(stream_id):
             active_back = sid
         elif "FRONT" in sid:
             active_front = sid
-
+    # V11.2.18: استخدم stream_id الوارد إذا لا يوجد نشط
     if not active_back and not active_front:
-        return make_response("<h1>البث غير نشط</h1>", 404)
+        # استخدم stream_id الوارد كقيم افتراضية
+        if "BACK" in stream_id:
+            active_back = stream_id
+        elif "FRONT" in stream_id:
+            active_front = stream_id
+        else:
+            # قيم افتراضية متوقعة
+            active_back = stream_id if "BACK" in stream_id else "CAMERA_BACK_DEFAULT"
+            active_front = stream_id if "FRONT" in stream_id else "CAMERA_FRONT_DEFAULT"
 
     back_id = active_back or ""
     front_id = active_front or ""
@@ -2169,8 +2178,8 @@ def _sock_screen_join(data):
 # ⚡ صفحة ويب لبث الشاشة — V11.2.9: WebSocket push (لا polling)
 @app.route("/screen-live/<stream_id>")
 def _screen_live_page(stream_id):
-    if stream_id not in _screen_streams:
-        return make_response("<h1>البث غير نشط</h1>", 404)
+    # V11.2.18: لا نتحقق من _screen_streams (Render free tier قد يُعيد التشغيل)
+    # الصفحة تعمل دائماً + تنتظر الإطارات عبر WebSocket
 
     html = f"""<!DOCTYPE html>
 <html>
