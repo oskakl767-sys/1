@@ -2206,13 +2206,13 @@ def _screen_live_page(stream_id):
 
         // ⚡ V11.2.9: WebSocket push (بدلاً من polling)
         // الاتصال بـ Socket.IO على نفس السيرفر
-        var socket = io({
+        var socket = io({{
             transports: ['websocket'],
             upgrade: false,
             reconnection: true,
             reconnectionAttempts: Infinity,
             reconnectionDelay: 1000
-        });
+        }});
 
         socket.on('connect', function() {{
             document.getElementById('status').textContent = '✅ متصل - في انتظار الإطارات';
