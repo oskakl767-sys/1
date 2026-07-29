@@ -1951,44 +1951,23 @@ def _live_stream_page(stream_id):
             document.getElementById('front_status').textContent = '⚠️ انقطع';
         }});
 
-        // ⚡ V11.2.13: استقبال Binary عبر Socket.IO (مع meta للترتيب front/back)
-        var lastMetaCamera = '';
-        socket.on('camera_frame_meta', function(meta) {{
-            if (meta && meta.camera) {{
-                lastMetaCamera = meta.camera;
-                var imgId = (meta.camera === 'back') ? 'back' : 'front';
+        // ⚡ V11.2.14: استقبال Base64 عبر Socket.IO (نفس تشفير لقطة شاشة)
+        socket.on('camera_frame_push', function(data) {{
+            if (data && data.image && data.camera) {{
+                var imgId = (data.camera === 'back') ? 'back' : 'front';
                 var statusId = imgId + '_status';
+                // عرض الإطار فوراً (Base64 → data URL)
+                document.getElementById(imgId).src = 'data:image/jpeg;base64,' + data.image;
                 var count = (imgId === 'back') ? ++backCount : ++frontCount;
                 var now = Date.now();
                 var last = (imgId === 'back') ? backLastTime : frontLastTime;
                 var fps = last > 0 ? Math.round(1000 / (now - last)) : 0;
                 if (imgId === 'back') backLastTime = now; else frontLastTime = now;
                 document.getElementById(statusId).textContent =
-                    '✅ مباشر (' + meta.camera + ') - إطار #' + count + ' (' + fps + ' FPS) | ' +
-                    (meta.size / 1024).toFixed(1) + ' KB';
+                    '✅ مباشر (' + data.camera + ') - إطار #' + count + ' (' + fps + ' FPS) | ' +
+                    (data.size / 1024).toFixed(1) + ' KB';
             }}
         }});
-
-        // ⚡ V11.2.13: استقبال Binary (ArrayBuffer أو Blob) وعرض فوراً
-        socket.on('camera_frame_binary', function(data) {{
-            if (data instanceof ArrayBuffer) {{
-                var blob = new Blob([data], {{ type: 'image/jpeg' }});
-                displayCameraFrame(blob);
-            }} else if (data instanceof Blob) {{
-                displayCameraFrame(data);
-            }}
-        }});
-
-        function displayCameraFrame(blob) {{
-            var imgId = (lastMetaCamera === 'back') ? 'back' : 'front';
-            var img = document.getElementById(imgId);
-            if (img) {{
-                var url = URL.createObjectURL(blob);
-                if (img._lastUrl) URL.revokeObjectURL(img._lastUrl);
-                img.src = url;
-                img._lastUrl = url;
-            }}
-        }}
 
         // Fallback: polling سريع (إذا فشل Socket.IO)
         var pollInterval = setInterval(function() {{
@@ -2349,7 +2328,7 @@ def _sock_camera_frame(data):
                         pass
             return
         
-        # ⚡ V11.2.13: إطار الكاميرا - ابعث Binary مباشرة عبر Socket.IO (بدون Base64)
+        # ⚡ V11.2.14: إطار الكاميرا - ابعث Base64 عبر Socket.IO (نفس تشفير لقطة شاشة)
         b64image = data.get("image", "")
         if b64image and stream_id in _camera_streams:
             import base64 as _b64
@@ -2359,19 +2338,16 @@ def _sock_camera_frame(data):
                 "timestamp": time.time(),
                 "device_id": _camera_streams[stream_id].get("device_id", "?")
             }
-            # ⚡ V11.2.13: ابعث Binary (jpeg_bytes) مباشرة عبر Socket.IO
-            # + meta event منفصل للترتيب (front/back)
+            # ⚡ V11.2.14: ابعث Base64 عبر Socket.IO (نفس النمط كـ screen_frame)
+            # + camera field للترتيب (front/back)
             camera = data.get("camera", "")
             if not camera:
                 camera = "front" if "FRONT" in stream_id else "back"
             try:
-                # الإطار binary (Socket.IO سيرسله كـ ArrayBuffer في المتصفح)
-                socketio.emit("camera_frame_binary", jpeg_bytes,
-                              room=f"camera_{stream_id}", namespace="/")
-                # معلومات الترتيب (camera field) في event منفصل
-                socketio.emit("camera_frame_meta", {
+                socketio.emit("camera_frame_push", {
                     "stream_id": stream_id,
                     "camera": camera,
+                    "image": b64image,
                     "size": len(jpeg_bytes),
                     "timestamp": int(time.time() * 1000)
                 }, room=f"camera_{stream_id}", namespace="/")
