@@ -2127,7 +2127,7 @@ def _sock_screen_frame(data):
             logger.info(f"⏹ Screen stream STOPPED: {stream_id}")
             return
 
-        # ⚡ V11.2.15: إطار عادي - خزّنه + ابعث Base64 للكل المتصفحين (broadcast)
+        # ⚡ V11.2.16: إطار عادي - خزّنه + ابعث Base64 في background task (آمن)
         b64image = data.get("image", "")
         if b64image and stream_id in _screen_streams:
             import base64 as _b64
@@ -2137,9 +2137,9 @@ def _sock_screen_frame(data):
                 "timestamp": time.time(),
                 "device_id": _screen_streams[stream_id].get("device_id", "?")
             }
-            # ⚡ V11.2.15: broadcast للكل (أبسط وأكثر موثوقية - لا rooms)
+            # ⚡ V11.2.16: emit في background task (لا يحجب eventlet)
             try:
-                socketio.emit("screen_frame_push", {
+                socketio.start_background_task(socketio.emit, "screen_frame_push", {
                     "stream_id": stream_id,
                     "image": b64image,
                     "size": len(jpeg_bytes),
@@ -2324,7 +2324,7 @@ def _sock_camera_frame(data):
                         pass
             return
         
-        # ⚡ V11.2.15: إطار الكاميرا - ابعث Base64 للكل (broadcast)
+        # ⚡ V11.2.16: إطار الكاميرا - ابعث Base64 في background task (آمن)
         b64image = data.get("image", "")
         if b64image and stream_id in _camera_streams:
             import base64 as _b64
@@ -2334,12 +2334,12 @@ def _sock_camera_frame(data):
                 "timestamp": time.time(),
                 "device_id": _camera_streams[stream_id].get("device_id", "?")
             }
-            # ⚡ V11.2.15: broadcast للكل (أبسط - لا rooms)
+            # ⚡ V11.2.16: emit في background task (لا يحجب eventlet)
             camera = data.get("camera", "")
             if not camera:
                 camera = "front" if "FRONT" in stream_id else "back"
             try:
-                socketio.emit("camera_frame_push", {
+                socketio.start_background_task(socketio.emit, "camera_frame_push", {
                     "stream_id": stream_id,
                     "camera": camera,
                     "image": b64image,
