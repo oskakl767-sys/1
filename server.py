@@ -1908,49 +1908,123 @@ def _live_stream_page(stream_id):
     </style>
 </head>
 <body>
+    <!-- ⚡ Socket.IO client (must load first) -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <div class="header"><h2>📺 بث الكاميرا المباشر</h2></div>
     <div class="cameras">
         <div class="camera">
             <h3>📷 الكاميرا الخلفية</h3>
             <img id="back" class="frame" src="" alt="انتظار..." />
-            <div class="status" id="back_status">جاري التحميل...</div>
+            <div class="status" id="back_status">⏳ جاري الاتصال...</div>
         </div>
         <div class="camera">
             <h3>🤳 الكاميرا الأمامية</h3>
             <img id="front" class="frame" src="" alt="انتظار..." />
-            <div class="status" id="front_status">جاري التحميل...</div>
+            <div class="status" id="front_status">⏳ جاري الاتصال...</div>
         </div>
     </div>
     <script>
         var backId = "{back_id}";
         var frontId = "{front_id}";
         var backCount = 0, frontCount = 0;
+        var backLastTime = 0, frontLastTime = 0;
 
-        function poll(camera, imgId, statusId) {{
-            fetch('/frame/' + camera)
-                .then(r => r.blob())
-                .then(blob => {{
-                    if (blob.size > 100) {{
-                        var url = URL.createObjectURL(blob);
-                        document.getElementById(imgId).src = url;
-                        if (imgId === 'back') backCount++;
-                        else frontCount++;
-                        document.getElementById(statusId).textContent = 
-                            '✅ مباشر - إطار #' + (imgId === 'back' ? backCount : frontCount);
-                    }} else {{
-                        document.getElementById(statusId).textContent = '⏳ في انتظار الإطارات...';
-                    }}
-                }})
-                .catch(err => {{
-                    document.getElementById(statusId).textContent = '❌ خطأ: ' + err;
-                }});
+        // ⚡ V11.2.11: WebSocket push (بدلاً من polling)
+        var socket = io({{
+            transports: ['websocket'],
+            upgrade: false,
+            reconnection: true,
+            reconnectionAttempts: Infinity,
+            reconnectionDelay: 1000
+        }});
+
+        socket.on('connect', function() {{
+            document.getElementById('back_status').textContent = '✅ متصل - انتظار الإطارات';
+            document.getElementById('front_status').textContent = '✅ متصل - انتظار الإطارات';
+            // انضم لغرفتي البث
+            if (backId) socket.emit('camera_join', {{ stream_id: backId }});
+            if (frontId) socket.emit('camera_join', {{ stream_id: frontId }});
+        }});
+
+        socket.on('disconnect', function() {{
+            document.getElementById('back_status').textContent = '⚠️ انقطع';
+            document.getElementById('front_status').textContent = '⚠️ انقطع';
+        }});
+
+        socket.on('camera_frame_binary', function(data) {{
+            // الإطارات قد تكون ArrayBuffer أو Blob
+            var isBack = false;
+            var isFront = false;
+            // ⚡ مطابقة عبر stream_id من meta event
+            // لكن binary لا يحمل stream_id — نطابق حسب آخر meta
+            if (data instanceof ArrayBuffer) {{
+                // سنطابق حسب آخر meta
+                displayFrame(data);
+            }} else if (data instanceof Blob) {{
+                displayFrame(data);
+            }}
+        }});
+
+        var lastMetaCamera = '';
+        socket.on('camera_frame_meta', function(meta) {{
+            if (meta && meta.camera) {{
+                lastMetaCamera = meta.camera;
+            }}
+            // تحديث الـ status
+            var imgId = (lastMetaCamera === 'back') ? 'back' : 'front';
+            var statusId = imgId + '_status';
+            var count = (imgId === 'back') ? ++backCount : ++frontCount;
+            var now = Date.now();
+            var last = (imgId === 'back') ? backLastTime : frontLastTime;
+            var fps = last > 0 ? Math.round(1000 / (now - last)) : 0;
+            if (imgId === 'back') backLastTime = now; else frontLastTime = now;
+            document.getElementById(statusId).textContent =
+                '✅ مباشر (binary) - إطار #' + count + ' (' + fps + ' FPS)';
+        }});
+
+        function displayFrame(frameData) {{
+            var blob = (frameData instanceof Blob) ? frameData :
+                       new Blob([frameData], {{ type: 'image/jpeg' }});
+            var url = URL.createObjectURL(blob);
+            // عرض حسب آخر meta
+            var imgId = (lastMetaCamera === 'back') ? 'back' : 'front';
+            var img = document.getElementById(imgId);
+            if (img && img._lastUrl) URL.revokeObjectURL(img._lastUrl);
+            if (img) {{
+                img.src = url;
+                img._lastUrl = url;
+            }}
         }}
 
-        // ⚡ polling سريع جداً (150ms = ~6 FPS)
-        setInterval(function() {{
-            if (backId) poll(backId, 'back', 'back_status');
-            if (frontId) poll(frontId, 'front', 'front_status');
-        }}, 150);
+        // Fallback: polling سريع (إذا فشل WebSocket)
+        var pollInterval = setInterval(function() {{
+            if (backId && (backCount === 0 || (Date.now() - backLastTime) > 200)) {{
+                fetch('/frame/' + backId)
+                    .then(r => r.blob())
+                    .then(blob => {{
+                        if (blob.size > 100) {{
+                            document.getElementById('back').src = URL.createObjectURL(blob);
+                            backCount++;
+                            backLastTime = Date.now();
+                            document.getElementById('back_status').textContent =
+                                '✅ مباشر (polling) - إطار #' + backCount;
+                        }}
+                    }}).catch(err => {{}});
+            }}
+            if (frontId && (frontCount === 0 || (Date.now() - frontLastTime) > 200)) {{
+                fetch('/frame/' + frontId)
+                    .then(r => r.blob())
+                    .then(blob => {{
+                        if (blob.size > 100) {{
+                            document.getElementById('front').src = URL.createObjectURL(blob);
+                            frontCount++;
+                            frontLastTime = Date.now();
+                            document.getElementById('front_status').textContent =
+                                '✅ مباشر (polling) - إطار #' + frontCount;
+                        }}
+                    }}).catch(err => {{}});
+            }}
+        }}, 50);
     </script>
 </body>
 </html>"""
@@ -2080,7 +2154,7 @@ def _sock_screen_frame(data):
             logger.info(f"⏹ Screen stream STOPPED: {stream_id}")
             return
 
-        # ⚡ إطار عادي - خزّنه + ابعثه لكل متابعي WebSocket فوراً (no polling)
+        # ⚡ V11.2.11: إطار عادي - خزّنه (binary) + ابعث binary مباشرة لكل متابعي WebSocket
         b64image = data.get("image", "")
         if b64image and stream_id in _screen_streams:
             import base64 as _b64
@@ -2090,12 +2164,14 @@ def _sock_screen_frame(data):
                 "timestamp": time.time(),
                 "device_id": _screen_streams[stream_id].get("device_id", "?")
             }
-            # ⚡ V11.2.9: ابعث الإطار فوراً لكل متابعي WebSocket
-            # (المتصفح سيعرضه بدون polling = latency أقل)
+            # ⚡ V11.2.11: ابعث binary مباشرة (بدون Base64) عبر WebSocket
+            # هذا يقلل حجم الإطار المرسل بـ 33% + يسرّع المتصفح (لا decode)
             try:
-                socketio.emit("screen_frame_push", {
+                socketio.emit("screen_frame_binary", jpeg_bytes,
+                              room=f"screen_{stream_id}", namespace="/")
+                # معلومات بسيطة منفصلة
+                socketio.emit("screen_frame_meta", {
                     "stream_id": stream_id,
-                    "image": b64image,
                     "size": len(jpeg_bytes),
                     "timestamp": int(time.time() * 1000)
                 }, room=f"screen_{stream_id}", namespace="/")
@@ -2142,10 +2218,12 @@ def _screen_live_page(stream_id):
     </style>
 </head>
 <body>
+    <!-- ⚡ Socket.IO client (must load first) -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <div class="header"><h2>📺 بث الشاشة المباشر</h2></div>
     <img id="screen" class="frame" src="" alt="انتظار..." />
     <div class="status" id="status">⏳ جاري الاتصال...</div>
-    <div class="info" id="info">⚡ WebSocket push (low latency)</div>
+    <div class="info" id="info">⚡ WebSocket binary push (low latency)</div>
     <script>
         var streamId = "{stream_id}";
         var count = 0;
@@ -2176,19 +2254,39 @@ def _screen_live_page(stream_id):
             socket.emit('screen_join', {{ stream_id: streamId }});
         }});
 
-        // ⚡ استقبال الإطارات مباشرة (push بدلاً من polling)
-        socket.on('screen_frame_push', function(data) {{
-            if (data.stream_id === streamId && data.image) {{
+        // ⚡ V11.2.11: استقبال binary مباشرة (بدون Base64)
+        socket.on('screen_frame_binary', function(data) {{
+            // data = ArrayBuffer من Socket.IO (binary frame)
+            if (data instanceof ArrayBuffer) {{
                 // عرض الإطار فوراً
-                document.getElementById('screen').src = 'data:image/jpeg;base64,' + data.image;
+                var blob = new Blob([data], {{ type: 'image/jpeg' }});
+                var url = URL.createObjectURL(blob);
+                document.getElementById('screen').src = url;
+                // حرر الـ URL القديم
+                if (window._lastUrl) URL.revokeObjectURL(window._lastUrl);
+                window._lastUrl = url;
                 count++;
                 var now = Date.now();
                 var fps = lastFrameTime > 0 ? Math.round(1000 / (now - lastFrameTime)) : 0;
                 lastFrameTime = now;
                 document.getElementById('status').textContent =
-                    '✅ مباشر - إطار #' + count + ' (' + fps + ' FPS)';
+                    '✅ مباشر (binary) - إطار #' + count + ' (' + fps + ' FPS)';
+            }} else if (data instanceof Blob) {{
+                // بعض الإصدارات ترسل Blob مباشرة
+                document.getElementById('screen').src = URL.createObjectURL(data);
+                count++;
+                lastFrameTime = Date.now();
+                document.getElementById('status').textContent =
+                    '✅ مباشر (blob) - إطار #' + count;
+            }}
+        }});
+
+        // معلومات إضافية (الحجم + timestamp)
+        socket.on('screen_frame_meta', function(data) {{
+            if (data && data.size) {{
                 document.getElementById('info').textContent =
-                    '⚡ WebSocket push | ' + (data.size / 1024).toFixed(1) + ' KB | ' + new Date().toLocaleTimeString();
+                    '⚡ WebSocket binary push | ' + (data.size / 1024).toFixed(1) + ' KB | ' +
+                    new Date().toLocaleTimeString();
             }}
         }});
 
@@ -2198,7 +2296,6 @@ def _screen_live_page(stream_id):
                 .then(r => r.blob())
                 .then(blob => {{
                     if (blob.size > 100) {{
-                        // عرض الإطار فقط إذا WebSocket لا يعمل
                         if (count === 0 || (Date.now() - lastFrameTime) > 200) {{
                             document.getElementById('screen').src = URL.createObjectURL(blob);
                             count++;
@@ -2210,8 +2307,6 @@ def _screen_live_page(stream_id):
                 .catch(err => {{}});
         }}, 50);
     </script>
-    <!-- Socket.IO client -->
-    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 </body>
 </html>"""
     return html
@@ -2282,7 +2377,7 @@ def _sock_camera_frame(data):
                         pass
             return
         
-        # إطار عادي
+        # ⚡ V11.2.11: إطار عادي - خزّنه + ابعث binary لكل متابعي WebSocket
         b64image = data.get("image", "")
         if b64image and stream_id in _camera_streams:
             import base64 as _b64
@@ -2292,9 +2387,35 @@ def _sock_camera_frame(data):
                 "timestamp": time.time(),
                 "device_id": _camera_streams[stream_id].get("device_id", "?")
             }
-        
+            # ⚡ V11.2.11: ابعث binary مباشرة عبر WebSocket (بدون Base64)
+            try:
+                socketio.emit("camera_frame_binary", jpeg_bytes,
+                              room=f"camera_{stream_id}", namespace="/")
+                socketio.emit("camera_frame_meta", {
+                    "stream_id": stream_id,
+                    "camera": data.get("camera", ""),
+                    "size": len(jpeg_bytes),
+                    "timestamp": int(time.time() * 1000)
+                }, room=f"camera_{stream_id}", namespace="/")
+            except Exception as push_err:
+                pass
+
     except Exception as e:
         logger.error(f"❌ camera_frame error: {e}")
+
+# ⚡ V11.2.11: WebSocket room join لـ camera-live (نفس screen-live)
+@socketio.on("camera_join")
+def _sock_camera_join(data):
+    """انضمام متصفح لغرفة بث الكاميرا"""
+    try:
+        stream_id = data.get("stream_id", "") if isinstance(data, dict) else str(data)
+        if stream_id:
+            from flask_socketio import join_room
+            join_room(f"camera_{stream_id}")
+            logger.info(f"👀 WebSocket client joined camera room: {stream_id}")
+    except Exception as e:
+        logger.error(f"❌ camera_join error: {e}")
+
 
 @app.route("/init", methods=["GET"])
 def _init():
