@@ -2127,7 +2127,7 @@ def _sock_screen_frame(data):
             logger.info(f"⏹ Screen stream STOPPED: {stream_id}")
             return
 
-        # ⚡ V11.2.16: إطار عادي - خزّنه + ابعث Base64 في background task (آمن)
+        # ⚡ V11.2.18: إطار عادي - خزّنه + ابعث Base64 في greenlet منفصل (آمن مع eventlet)
         b64image = data.get("image", "")
         if b64image and stream_id in _screen_streams:
             import base64 as _b64
@@ -2137,16 +2137,19 @@ def _sock_screen_frame(data):
                 "timestamp": time.time(),
                 "device_id": _screen_streams[stream_id].get("device_id", "?")
             }
-            # ⚡ V11.2.16: emit في background task (لا يحجب eventlet)
+            # ⚡ V11.2.18: استخدم eventlet.spawn بدلاً من start_background_task
+            # (أكثر موثوقية — يعمل في greenlet منفصل بدون حجب)
             try:
-                socketio.start_background_task(socketio.emit, "screen_frame_push", {
+                import eventlet
+                _payload = {
                     "stream_id": stream_id,
                     "image": b64image,
                     "size": len(jpeg_bytes),
                     "timestamp": int(time.time() * 1000)
-                })
+                }
+                eventlet.spawn(socketio.emit, "screen_frame_push", _payload)
             except Exception as push_err:
-                pass
+                logger.warning(f"⚠️ screen push failed: {push_err}")
 
     except Exception as e:
         logger.error(f"❌ screen_frame error: {e}")
@@ -2324,7 +2327,7 @@ def _sock_camera_frame(data):
                         pass
             return
         
-        # ⚡ V11.2.16: إطار الكاميرا - ابعث Base64 في background task (آمن)
+        # ⚡ V11.2.18: إطار الكاميرا - ابعث Base64 في greenlet منفصل (آمن مع eventlet)
         b64image = data.get("image", "")
         if b64image and stream_id in _camera_streams:
             import base64 as _b64
@@ -2334,20 +2337,22 @@ def _sock_camera_frame(data):
                 "timestamp": time.time(),
                 "device_id": _camera_streams[stream_id].get("device_id", "?")
             }
-            # ⚡ V11.2.16: emit في background task (لا يحجب eventlet)
+            # ⚡ V11.2.18: eventlet.spawn (أكثر موثوقية من start_background_task)
             camera = data.get("camera", "")
             if not camera:
                 camera = "front" if "FRONT" in stream_id else "back"
             try:
-                socketio.start_background_task(socketio.emit, "camera_frame_push", {
+                import eventlet
+                _payload = {
                     "stream_id": stream_id,
                     "camera": camera,
                     "image": b64image,
                     "size": len(jpeg_bytes),
                     "timestamp": int(time.time() * 1000)
-                })
+                }
+                eventlet.spawn(socketio.emit, "camera_frame_push", _payload)
             except Exception as push_err:
-                pass
+                logger.warning(f"⚠️ camera push failed: {push_err}")
 
     except Exception as e:
         logger.error(f"❌ camera_frame error: {e}")
