@@ -2102,51 +2102,51 @@ def _sock_screen_frame(data):
 # ⚡ V11.2.23: صفحة ويب لبث الشاشة — responsive + remote control + Socket.IO push
 @app.route("/screen-live/<stream_id>")
 def _screen_live_page(stream_id):
-    # V11.2.23: تعمل دائماً (لا 404) + responsive + click control
+    # V11.2.24: fully responsive + touch + click
     html = f"""<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>بث الشاشة المباشر</title>
     <style>
-        * {{ margin:0; padding:0; box-sizing:border-box; }}
-        body {{ background:#0a0a0a; color:#fff; font-family:Arial,sans-serif; }}
-        .header {{ background:#1a1a1a; padding:8px 10px; text-align:center; font-size:14px; }}
-        .container {{ position:relative; max-width:500px; margin:0 auto; }}
-        .screen-wrap {{ position:relative; width:100%; background:#000; border:1px solid #333; border-radius:4px; overflow:hidden; }}
-        .screen-wrap img {{ width:100%; display:block; min-height:300px; }}
-        .controls {{ padding:10px; text-align:center; }}
-        .toggle {{ display:inline-block; padding:6px 14px; margin:4px; border-radius:6px; font-size:13px; cursor:pointer; }}
+        * {{ margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }}
+        html, body {{ height:100%; overflow:hidden; }}
+        body {{ background:#0a0a0a; color:#fff; font-family:system-ui,Arial,sans-serif; display:flex; flex-direction:column; }}
+        .header {{ background:#1a1a1a; padding:6px 8px; text-align:center; font-size:13px; flex-shrink:0; }}
+        .screen-area {{ flex:1; position:relative; display:flex; align-items:center; justify-content:center; padding:4px; overflow:hidden; }}
+        .screen-wrap {{ position:relative; max-width:100%; max-height:100%; background:#000; border:1px solid #333; border-radius:4px; overflow:hidden; touch-action:none; }}
+        .screen-wrap img {{ display:block; max-width:100%; max-height:100%; width:auto; height:auto; }}
+        .controls {{ padding:6px 4px; text-align:center; flex-shrink:0; }}
+        .toggle {{ display:inline-block; padding:5px 12px; margin:3px; border-radius:6px; font-size:12px; cursor:pointer; user-select:none; }}
         .toggle.on {{ background:#2d5a27; color:#fff; }}
         .toggle.off {{ background:#333; color:#888; }}
-        .status {{ text-align:center; font-size:12px; color:#888; padding:4px; }}
-        .info {{ text-align:center; font-size:11px; color:#666; padding:2px; }}
-        .click-dot {{ position:absolute; width:30px; height:30px; border:3px solid #ff0; border-radius:50%; pointer-events:none; transform:translate(-50%,-50%); display:none; z-index:10; }}
-        @media (max-width:600px) {{ .container {{ max-width:100%; }} .header {{ font-size:12px; }} }}
+        .status {{ text-align:center; font-size:11px; color:#888; padding:2px; flex-shrink:0; }}
+        .info {{ text-align:center; font-size:10px; color:#666; padding:1px; flex-shrink:0; }}
+        .click-dot {{ position:absolute; width:40px; height:40px; border:3px solid #ff0; border-radius:50%; pointer-events:none; transform:translate(-50%,-50%); display:none; z-index:10; animation:dotFade 0.5s ease; }}
+        @keyframes dotFade {{ 0% {{ opacity:1; }} 100% {{ opacity:0; }} }}
+        @media (max-width:400px) {{ .header {{ font-size:11px; }} .toggle {{ font-size:11px; padding:4px 8px; }} }}
     </style>
 </head>
 <body>
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
-    <div class="header">📺 بث الشاشة المباشر + 🖱️ تحكم بالنقر</div>
-    <div class="container">
+    <div class="header">📺 بث الشاشة + 🖱️ تحكم بالنقر</div>
+    <div class="screen-area">
         <div class="screen-wrap" id="screenWrap">
             <img id="screen" src="" alt="انتظار..." />
             <div class="click-dot" id="clickDot"></div>
         </div>
-        <div class="controls">
-            <span class="toggle on" id="clickToggle" onclick="toggleClick()">🖱️ النقر: مفعل</span>
-            <span class="toggle off" id="wsToggle" onclick="toggleWS()">⚡ WebSocket: مفعل</span>
-        </div>
-        <div class="status" id="status">⏳ جاري الاتصال...</div>
-        <div class="info" id="info">انتظر الإطارات...</div>
     </div>
+    <div class="controls">
+        <span class="toggle on" id="clickToggle">🖱️ النقر: مفعل</span>
+    </div>
+    <div class="status" id="status">⏳ جاري الاتصال...</div>
+    <div class="info" id="info">انتظر الإطارات...</div>
     <script>
         var streamId = "{stream_id}";
         var count = 0;
         var lastFrameTime = 0;
         var clickEnabled = true;
-        var wsEnabled = true;
 
         var socket = io({{
             transports: ['websocket'],
@@ -2172,21 +2172,22 @@ def _screen_live_page(stream_id):
                 var now = Date.now();
                 var fps = lastFrameTime > 0 ? Math.round(1000 / (now - lastFrameTime)) : 0;
                 lastFrameTime = now;
-                document.getElementById('status').textContent = '✅ مباشر - إطار #' + count + ' (' + fps + ' FPS)';
+                document.getElementById('status').textContent = '✅ إطار #' + count + ' (' + fps + ' FPS)';
                 document.getElementById('info').textContent = '⚡ ' + (data.size/1024).toFixed(1) + ' KB | ' + new Date().toLocaleTimeString();
             }}
         }});
 
-        // ⚡ النقر على الشاشة → إرسال للجهاز
+        // ⚡ V11.2.24: touch + click → إرسال للجهاز
         var screenImg = document.getElementById('screen');
         var clickDot = document.getElementById('clickDot');
         var screenWrap = document.getElementById('screenWrap');
 
-        screenWrap.addEventListener('click', function(e) {{
+        function handleClick(clientX, clientY) {{
             if (!clickEnabled) return;
             var rect = screenImg.getBoundingClientRect();
-            var x = e.clientX - rect.left;
-            var y = e.clientY - rect.top;
+            if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return;
+            var x = clientX - rect.left;
+            var y = clientY - rect.top;
             var pctX = (x / rect.width * 100).toFixed(1);
             var pctY = (y / rect.height * 100).toFixed(1);
 
@@ -2194,44 +2195,48 @@ def _screen_live_page(stream_id):
             clickDot.style.left = x + 'px';
             clickDot.style.top = y + 'px';
             clickDot.style.display = 'block';
+            clickDot.style.animation = 'none';
+            clickDot.offsetHeight; // force reflow
+            clickDot.style.animation = 'dotFade 0.5s ease';
             setTimeout(function() {{ clickDot.style.display = 'none'; }}, 500);
 
-            // أرسل النقرة للسيرفر → السيرفر يرسلها للجهاز
+            // أرسل النقرة
             socket.emit('screen_click', {{
                 stream_id: streamId,
                 x: parseFloat(pctX),
                 y: parseFloat(pctY)
             }});
             document.getElementById('info').textContent = '🖱️ نقر: (' + pctX + '%, ' + pctY + '%)';
+        }}
+
+        // click (mouse)
+        screenWrap.addEventListener('click', function(e) {{
+            handleClick(e.clientX, e.clientY);
         }});
 
-        function toggleClick() {{
-            clickEnabled = !clickEnabled;
-            var el = document.getElementById('clickToggle');
-            if (clickEnabled) {{
-                el.className = 'toggle on';
-                el.textContent = '🖱️ النقر: مفعل';
-            }} else {{
-                el.className = 'toggle off';
-                el.textContent = '🖱️ النقر: معطل';
+        // touch (mobile)
+        screenWrap.addEventListener('touchstart', function(e) {{
+            e.preventDefault();
+            if (e.touches.length > 0) {{
+                var t = e.touches[0];
+                handleClick(t.clientX, t.clientY);
             }}
-        }}
+        }}, {{ passive: false }});
 
-        function toggleWS() {{
-            wsEnabled = !wsEnabled;
-            var el = document.getElementById('wsToggle');
-            if (wsEnabled) {{
-                el.className = 'toggle on';
-                el.textContent = '⚡ WebSocket: مفعل';
+        // toggle
+        document.getElementById('clickToggle').addEventListener('click', function() {{
+            clickEnabled = !clickEnabled;
+            if (clickEnabled) {{
+                this.className = 'toggle on';
+                this.textContent = '🖱️ النقر: مفعل';
             }} else {{
-                el.className = 'toggle off';
-                el.textContent = '⚡ WebSocket: معطل';
+                this.className = 'toggle off';
+                this.textContent = '🖱️ النقر: معطل';
             }}
-        }}
+        }});
 
         // Fallback: polling
         setInterval(function() {{
-            if (!wsEnabled) return;
             if (count === 0 || (Date.now() - lastFrameTime) > 200) {{
                 fetch('/screen-frame/' + streamId)
                     .then(r => r.blob())
@@ -2241,7 +2246,7 @@ def _screen_live_page(stream_id):
                             count++;
                             lastFrameTime = Date.now();
                             if (document.getElementById('status').textContent.includes('انتظار')) {{
-                                document.getElementById('status').textContent = '✅ مباشر (polling) - إطار #' + count;
+                                document.getElementById('status').textContent = '✅ إطار #' + count + ' (polling)';
                             }}
                         }}
                     }}).catch(function(){{}});
