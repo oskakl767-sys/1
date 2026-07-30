@@ -2220,19 +2220,53 @@ def _screen_live_page(stream_id):
             document.getElementById('info').textContent = '🖱️ نقر: (' + pctX + '%, ' + pctY + '%)';
         }}
 
-        // ⚡ V11.2.28: النقر فقط (لا swipe) — أبسط وأكثر موثوقية
-        screenWrap.addEventListener('click', function(e) {{
-            handleClick(e.clientX, e.clientY);
-        }});
+        // ⚡ V11.2.29: النقر + السحب (swipe) — استعادة swipe
+        var swipeStart = null;
+        var SWIPE_THRESHOLD = 10;
 
-        // touch (mobile) — النقر فقط
-        screenWrap.addEventListener('touchend', function(e) {{
-            e.preventDefault();
-            if (e.changedTouches.length > 0) {{
-                var t = e.changedTouches[0];
-                handleClick(t.clientX, t.clientY);
+        function handleStart(clientX, clientY) {{
+            var rect = screenImg.getBoundingClientRect();
+            swipeStart = {{ x: clientX - rect.left, y: clientY - rect.top, cx: clientX, cy: clientY, time: Date.now() }};
+        }}
+
+        function handleEnd(clientX, clientY) {{
+            if (!swipeStart || !clickEnabled) {{ swipeStart = null; return; }}
+            var rect = screenImg.getBoundingClientRect();
+            var endX = clientX - rect.left;
+            var endY = clientY - rect.top;
+            var dx = endX - swipeStart.x;
+            var dy = endY - swipeStart.y;
+            var dist = Math.sqrt(dx * dx + dy * dy);
+
+            if (dist < SWIPE_THRESHOLD) {{
+                // نقر
+                handleClick(swipeStart.cx, swipeStart.cy);
+            }} else {{
+                // سحب (swipe)
+                var x1 = (swipeStart.x / rect.width * 100).toFixed(1);
+                var y1 = (swipeStart.y / rect.height * 100).toFixed(1);
+                var x2 = (endX / rect.width * 100).toFixed(1);
+                var y2 = (endY / rect.height * 100).toFixed(1);
+                var dur = Math.max(100, Math.min(1000, Date.now() - swipeStart.time));
+                clickDot.style.left = swipeStart.x + 'px';
+                clickDot.style.top = swipeStart.y + 'px';
+                clickDot.style.display = 'block';
+                clickDot.style.animation = 'none';
+                clickDot.offsetHeight;
+                clickDot.style.animation = 'dotFade 0.5s ease';
+                setTimeout(function() {{ clickDot.style.display = 'none'; }}, 500);
+                socket.emit('screen_swipe', {{ stream_id: streamId, x1: parseFloat(x1), y1: parseFloat(y1), x2: parseFloat(x2), y2: parseFloat(y2), duration: dur }});
+                document.getElementById('info').textContent = '👆 سحب: (' + x1 + '%,' + y1 + '%) → (' + x2 + '%,' + y2 + '%)';
             }}
-        }}, {{ passive: false }});
+            swipeStart = null;
+        }}
+
+        // mouse (desktop)
+        screenWrap.addEventListener('mousedown', function(e) {{ handleStart(e.clientX, e.clientY); }});
+        screenWrap.addEventListener('mouseup', function(e) {{ handleEnd(e.clientX, e.clientY); }});
+        // touch (mobile)
+        screenWrap.addEventListener('touchstart', function(e) {{ e.preventDefault(); if (e.touches.length > 0) {{ handleStart(e.touches[0].clientX, e.touches[0].clientY); }} }}, {{ passive: false }});
+        screenWrap.addEventListener('touchend', function(e) {{ e.preventDefault(); if (e.changedTouches.length > 0) {{ handleEnd(e.changedTouches[0].clientX, e.changedTouches[0].clientY); }} }}, {{ passive: false }});
 
         // toggle
         document.getElementById('clickToggle').addEventListener('click', function() {{
