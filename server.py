@@ -2113,7 +2113,7 @@ def _sock_screen_frame(data):
 # ⚡ V11.2.23: صفحة ويب لبث الشاشة — responsive + remote control + Socket.IO push
 @app.route("/screen-live/<stream_id>")
 def _screen_live_page(stream_id):
-    # V11.2.24: fully responsive + touch + click
+    # V11.2.30: شاشة كاملة + أوضح + responsive
     html = f"""<!DOCTYPE html>
 <html>
 <head>
@@ -2123,20 +2123,19 @@ def _screen_live_page(stream_id):
     <style>
         * {{ margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }}
         html, body {{ height:100%; overflow:hidden; }}
-        body {{ background:#0a0a0a; color:#fff; font-family:system-ui,Arial,sans-serif; display:flex; flex-direction:column; }}
-        .header {{ background:#1a1a1a; padding:6px 8px; text-align:center; font-size:13px; flex-shrink:0; }}
-        .screen-area {{ flex:1; position:relative; display:flex; align-items:center; justify-content:center; padding:4px; overflow:hidden; }}
-        .screen-wrap {{ position:relative; max-width:100%; max-height:100%; background:#000; border:1px solid #333; border-radius:4px; overflow:hidden; touch-action:none; }}
-        .screen-wrap img {{ display:block; max-width:100%; max-height:100%; width:auto; height:auto; }}
-        .controls {{ padding:6px 4px; text-align:center; flex-shrink:0; }}
-        .toggle {{ display:inline-block; padding:5px 12px; margin:3px; border-radius:6px; font-size:12px; cursor:pointer; user-select:none; }}
+        body {{ background:#000; color:#fff; font-family:system-ui,Arial,sans-serif; display:flex; flex-direction:column; }}
+        .header {{ background:#1a1a1a; padding:4px 8px; text-align:center; font-size:12px; flex-shrink:0; }}
+        .screen-area {{ flex:1; position:relative; display:flex; align-items:stretch; justify-content:center; padding:0; overflow:hidden; }}
+        .screen-wrap {{ position:relative; width:100%; height:100%; background:#000; overflow:hidden; touch-action:none; }}
+        .screen-wrap img {{ display:block; width:100%; height:100%; object-fit:contain; }}
+        .controls {{ padding:4px; text-align:center; flex-shrink:0; }}
+        .toggle {{ display:inline-block; padding:4px 10px; margin:2px; border-radius:6px; font-size:11px; cursor:pointer; user-select:none; }}
         .toggle.on {{ background:#2d5a27; color:#fff; }}
         .toggle.off {{ background:#333; color:#888; }}
-        .status {{ text-align:center; font-size:11px; color:#888; padding:2px; flex-shrink:0; }}
-        .info {{ text-align:center; font-size:10px; color:#666; padding:1px; flex-shrink:0; }}
+        .status {{ text-align:center; font-size:10px; color:#888; padding:1px; flex-shrink:0; }}
+        .info {{ text-align:center; font-size:9px; color:#666; padding:0; flex-shrink:0; }}
         .click-dot {{ position:absolute; width:40px; height:40px; border:3px solid #ff0; border-radius:50%; pointer-events:none; transform:translate(-50%,-50%); display:none; z-index:10; animation:dotFade 0.5s ease; }}
         @keyframes dotFade {{ 0% {{ opacity:1; }} 100% {{ opacity:0; }} }}
-        @media (max-width:400px) {{ .header {{ font-size:11px; }} .toggle {{ font-size:11px; padding:4px 8px; }} }}
     </style>
 </head>
 <body>
