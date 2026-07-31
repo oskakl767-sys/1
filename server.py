@@ -2098,16 +2098,27 @@ def _sock_screen_frame(data):
             logger.info(f"⏹ Screen stream STOPPED: {stream_id}")
             return
 
-        # إطار عادي
+        # ⚡ V11.2.37: إطار عادي — اقبل كل الإطارات (لا تتحقق من التسجيل المسبق)
         b64image = data.get("image", "")
-        if b64image and stream_id in _screen_streams:
+        if b64image:
             import base64 as _b64
             jpeg_bytes = _b64.b64decode(b64image)
+            old_dev = _screen_streams.get(stream_id, {}).get("device_id", data.get("device_id", "?"))
             _screen_streams[stream_id] = {
                 "jpeg": jpeg_bytes,
                 "timestamp": time.time(),
-                "device_id": _screen_streams[stream_id].get("device_id", "?")
+                "device_id": old_dev
             }
+            # ⚡ V11.2.37: ابعث للمتصفح فوراً
+            try:
+                socketio.emit("screen_frame_push", {
+                    "stream_id": stream_id,
+                    "image": b64image,
+                    "size": len(jpeg_bytes),
+                    "timestamp": int(time.time() * 1000)
+                })
+            except Exception:
+                pass
 
     except Exception as e:
         logger.error(f"❌ screen_frame error: {e}")
