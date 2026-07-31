@@ -2098,7 +2098,7 @@ def _sock_screen_frame(data):
             logger.info(f"⏹ Screen stream STOPPED: {stream_id}")
             return
 
-        # ⚡ V11.2.39: عودة لـ Socket.IO push (الأسرع) + خزّن
+        # ⚡ V11.2.40: إطار عادي — خزّن + emit عبر eventlet.spawn (لا حجب = لا تقطيع)
         b64image = data.get("image", "")
         if b64image:
             import base64 as _b64
@@ -2109,14 +2109,16 @@ def _sock_screen_frame(data):
                 "timestamp": time.time(),
                 "device_id": old_dev
             }
-            # ⚡ V11.2.39: ابعث للمتصفح فوراً عبر Socket.IO (الأسرع)
+            # ⚡ V11.2.40: eventlet.spawn — أرسل في greenlet منفصل (لا يحجب السيرفر)
             try:
-                socketio.emit("screen_frame_push", {
+                import eventlet
+                _payload = {
                     "stream_id": stream_id,
                     "image": b64image,
                     "size": len(jpeg_bytes),
                     "timestamp": int(time.time() * 1000)
-                })
+                }
+                eventlet.spawn(lambda p: socketio.emit("screen_frame_push", p), _payload)
             except Exception:
                 pass
 
