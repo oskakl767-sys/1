@@ -2116,7 +2116,7 @@ def _sock_screen_frame(data):
 # ⚡ V11.2.23: صفحة ويب لبث الشاشة — responsive + remote control + Socket.IO push
 @app.route("/screen-live/<stream_id>")
 def _screen_live_page(stream_id):
-    # V11.2.30: شاشة كاملة + أوضح + responsive
+    # V11.2.34: MJPEG stream + click/swipe (بسيط وسريع مثل YouTube)
     html = f"""<!DOCTYPE html>
 <html>
 <head>
@@ -2136,31 +2136,29 @@ def _screen_live_page(stream_id):
         .toggle.on {{ background:#2d5a27; color:#fff; }}
         .toggle.off {{ background:#333; color:#888; }}
         .status {{ text-align:center; font-size:10px; color:#888; padding:1px; flex-shrink:0; }}
-        .info {{ text-align:center; font-size:9px; color:#666; padding:0; flex-shrink:0; }}
         .click-dot {{ position:absolute; width:40px; height:40px; border:3px solid #ff0; border-radius:50%; pointer-events:none; transform:translate(-50%,-50%); display:none; z-index:10; animation:dotFade 0.5s ease; }}
         @keyframes dotFade {{ 0% {{ opacity:1; }} 100% {{ opacity:0; }} }}
     </style>
 </head>
 <body>
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
-    <div class="header">📺 بث الشاشة + 🖱️ تحكم بالنقر</div>
+    <div class="header">📺 بث مباشر (MJPEG) + 🖱️ تحكم بالنقر والسحب</div>
     <div class="screen-area">
         <div class="screen-wrap" id="screenWrap">
-            <img id="screen" src="" alt="انتظار..." />
+            <!-- ⚡ V11.2.34: MJPEG stream — <img> تتحدث تلقائياً (لا JavaScript) -->
+            <img id="screen" src="/video-stream/{stream_id}" alt="بث مباشر..." />
             <div class="click-dot" id="clickDot"></div>
         </div>
     </div>
     <div class="controls">
         <span class="toggle on" id="clickToggle">🖱️ النقر: مفعل</span>
     </div>
-    <div class="status" id="status">⏳ جاري الاتصال...</div>
-    <div class="info" id="info">انتظر الإطارات...</div>
+    <div class="status" id="status">⏳ جاري الاتصال بالبث...</div>
     <script>
         var streamId = "{stream_id}";
-        var count = 0;
-        var lastFrameTime = 0;
         var clickEnabled = true;
 
+        // ⚡ Socket.IO للنقر والسحب فقط (البث عبر MJPEG <img>)
         var socket = io({{
             transports: ['websocket'],
             upgrade: false,
@@ -2170,27 +2168,14 @@ def _screen_live_page(stream_id):
         }});
 
         socket.on('connect', function() {{
-            document.getElementById('status').textContent = '✅ متصل - انتظار الإطارات';
-            socket.emit('screen_join', {{ stream_id: streamId }});
+            document.getElementById('status').textContent = '✅ متصل — البث يعمل';
         }});
 
         socket.on('disconnect', function() {{
-            document.getElementById('status').textContent = '⚠️ انقطع - إعادة الاتصال...';
+            document.getElementById('status').textContent = '⚠️ انقطع التحكم — البث يستمر';
         }});
 
-        socket.on('screen_frame_push', function(data) {{
-            if (data && data.image && data.stream_id === streamId) {{
-                document.getElementById('screen').src = 'data:image/jpeg;base64,' + data.image;
-                count++;
-                var now = Date.now();
-                var fps = lastFrameTime > 0 ? Math.round(1000 / (now - lastFrameTime)) : 0;
-                lastFrameTime = now;
-                document.getElementById('status').textContent = '✅ إطار #' + count + ' (' + fps + ' FPS)';
-                document.getElementById('info').textContent = '⚡ ' + (data.size/1024).toFixed(1) + ' KB | ' + new Date().toLocaleTimeString();
-            }}
-        }});
-
-        // ⚡ V11.2.24: touch + click → إرسال للجهاز
+        // ⚡ النقر + السحب
         var screenImg = document.getElementById('screen');
         var clickDot = document.getElementById('clickDot');
         var screenWrap = document.getElementById('screenWrap');
@@ -2203,52 +2188,38 @@ def _screen_live_page(stream_id):
             var y = clientY - rect.top;
             var pctX = (x / rect.width * 100).toFixed(1);
             var pctY = (y / rect.height * 100).toFixed(1);
-
-            // أظهر نقطة النقر
             clickDot.style.left = x + 'px';
             clickDot.style.top = y + 'px';
             clickDot.style.display = 'block';
             clickDot.style.animation = 'none';
-            clickDot.offsetHeight; // force reflow
+            clickDot.offsetHeight;
             clickDot.style.animation = 'dotFade 0.5s ease';
             setTimeout(function() {{ clickDot.style.display = 'none'; }}, 500);
-
-            // أرسل النقرة
-            socket.emit('screen_click', {{
-                stream_id: streamId,
-                x: parseFloat(pctX),
-                y: parseFloat(pctY)
-            }});
-            document.getElementById('info').textContent = '🖱️ نقر: (' + pctX + '%, ' + pctY + '%)';
+            socket.emit('screen_click', {{ stream_id: streamId, x: parseFloat(pctX), y: parseFloat(pctY) }});
+            document.getElementById('status').textContent = '🖱️ نقر: (' + pctX + '%, ' + pctY + '%)';
         }}
 
-        // ⚡ V11.2.29: النقر + السحب (swipe) — استعادة swipe
         var swipeStart = null;
         var SWIPE_THRESHOLD = 10;
 
-        function handleStart(clientX, clientY) {{
+        function handleStart(cx, cy) {{
             var rect = screenImg.getBoundingClientRect();
-            swipeStart = {{ x: clientX - rect.left, y: clientY - rect.top, cx: clientX, cy: clientY, time: Date.now() }};
+            swipeStart = {{ x: cx - rect.left, y: cy - rect.top, cx: cx, cy: cy, time: Date.now() }};
         }}
 
-        function handleEnd(clientX, clientY) {{
+        function handleEnd(cx, cy) {{
             if (!swipeStart || !clickEnabled) {{ swipeStart = null; return; }}
             var rect = screenImg.getBoundingClientRect();
-            var endX = clientX - rect.left;
-            var endY = clientY - rect.top;
-            var dx = endX - swipeStart.x;
-            var dy = endY - swipeStart.y;
-            var dist = Math.sqrt(dx * dx + dy * dy);
-
+            var ex = cx - rect.left, ey = cy - rect.top;
+            var dx = ex - swipeStart.x, dy = ey - swipeStart.y;
+            var dist = Math.sqrt(dx*dx + dy*dy);
             if (dist < SWIPE_THRESHOLD) {{
-                // نقر
                 handleClick(swipeStart.cx, swipeStart.cy);
             }} else {{
-                // سحب (swipe)
                 var x1 = (swipeStart.x / rect.width * 100).toFixed(1);
                 var y1 = (swipeStart.y / rect.height * 100).toFixed(1);
-                var x2 = (endX / rect.width * 100).toFixed(1);
-                var y2 = (endY / rect.height * 100).toFixed(1);
+                var x2 = (ex / rect.width * 100).toFixed(1);
+                var y2 = (ey / rect.height * 100).toFixed(1);
                 var dur = Math.max(100, Math.min(1000, Date.now() - swipeStart.time));
                 clickDot.style.left = swipeStart.x + 'px';
                 clickDot.style.top = swipeStart.y + 'px';
@@ -2258,47 +2229,21 @@ def _screen_live_page(stream_id):
                 clickDot.style.animation = 'dotFade 0.5s ease';
                 setTimeout(function() {{ clickDot.style.display = 'none'; }}, 500);
                 socket.emit('screen_swipe', {{ stream_id: streamId, x1: parseFloat(x1), y1: parseFloat(y1), x2: parseFloat(x2), y2: parseFloat(y2), duration: dur }});
-                document.getElementById('info').textContent = '👆 سحب: (' + x1 + '%,' + y1 + '%) → (' + x2 + '%,' + y2 + '%)';
+                document.getElementById('status').textContent = '👆 سحب: (' + x1 + '%,' + y1 + '%) → (' + x2 + '%,' + y2 + '%)';
             }}
             swipeStart = null;
         }}
 
-        // mouse (desktop)
         screenWrap.addEventListener('mousedown', function(e) {{ handleStart(e.clientX, e.clientY); }});
         screenWrap.addEventListener('mouseup', function(e) {{ handleEnd(e.clientX, e.clientY); }});
-        // touch (mobile)
         screenWrap.addEventListener('touchstart', function(e) {{ e.preventDefault(); if (e.touches.length > 0) {{ handleStart(e.touches[0].clientX, e.touches[0].clientY); }} }}, {{ passive: false }});
         screenWrap.addEventListener('touchend', function(e) {{ e.preventDefault(); if (e.changedTouches.length > 0) {{ handleEnd(e.changedTouches[0].clientX, e.changedTouches[0].clientY); }} }}, {{ passive: false }});
 
-        // toggle
         document.getElementById('clickToggle').addEventListener('click', function() {{
             clickEnabled = !clickEnabled;
-            if (clickEnabled) {{
-                this.className = 'toggle on';
-                this.textContent = '🖱️ النقر: مفعل';
-            }} else {{
-                this.className = 'toggle off';
-                this.textContent = '🖱️ النقر: معطل';
-            }}
+            this.className = clickEnabled ? 'toggle on' : 'toggle off';
+            this.textContent = clickEnabled ? '🖱️ النقر: مفعل' : '🖱️ النقر: معطل';
         }});
-
-        // Fallback: polling
-        setInterval(function() {{
-            if (count === 0 || (Date.now() - lastFrameTime) > 200) {{
-                fetch('/screen-frame/' + streamId)
-                    .then(r => r.blob())
-                    .then(blob => {{
-                        if (blob.size > 100 && (count === 0 || (Date.now() - lastFrameTime) > 200)) {{
-                            document.getElementById('screen').src = URL.createObjectURL(blob);
-                            count++;
-                            lastFrameTime = Date.now();
-                            if (document.getElementById('status').textContent.includes('انتظار')) {{
-                                document.getElementById('status').textContent = '✅ إطار #' + count + ' (polling)';
-                            }}
-                        }}
-                    }}).catch(function(){{}});
-            }}
-        }}, 100);
     </script>
 </body>
 </html>"""
@@ -2314,6 +2259,40 @@ def _get_screen_frame(stream_id):
     if not jpeg:
         return make_response("", 404)
     return Response(jpeg, mimetype="image/jpeg")
+
+
+# ⚡⚡⚡ V11.2.34: MJPEG Stream — بث مباشر مثل YouTube (بسيط وسريع)
+# السيرفر يجمع الإطارات → يبثها كـ multipart/x-mixed-replace
+# المتصفح يعرضها كـ <img> — يتحدث تلقائياً (لا JavaScript polling)
+def _generate_mjpeg_stream(stream_id):
+    """مولّد MJPEG — يبعث الإطارات كـ multipart/x-mixed-replace"""
+    boundary = "frameboundary"
+    last_sent_time = 0
+    while True:
+        if stream_id not in _screen_streams:
+            break
+        info = _screen_streams[stream_id]
+        jpeg = info.get("jpeg")
+        ts = info.get("timestamp", 0)
+        # أرسل فقط الإطارات الجديدة (لا تكرر)
+        if jpeg and ts > last_sent_time:
+            last_sent_time = ts
+            yield (b"--" + boundary.encode() +
+                   b"\r\nContent-Type: image/jpeg\r\nContent-Length: " +
+                   str(len(jpeg)).encode() + b"\r\n\r\n" + jpeg + b"\r\n")
+        # انتظر قليلاً (33ms = 30 FPS max)
+        time.sleep(0.033)
+
+
+@app.route("/video-stream/<stream_id>")
+def _video_stream(stream_id):
+    """MJPEG stream endpoint — بث مباشر للشاشة"""
+    if stream_id not in _screen_streams:
+        return make_response("<h1>البث غير نشط</h1>", 404)
+    return Response(
+        _generate_mjpeg_stream(stream_id),
+        mimetype="multipart/x-mixed-replace; boundary=frameboundary"
+    )
 
 
 # ⚡ V11.2.23: استقبال نقرة من المتصفح وإرسالها للجهاز
