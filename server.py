@@ -2116,7 +2116,7 @@ def _sock_screen_frame(data):
 # ⚡ V11.2.23: صفحة ويب لبث الشاشة — responsive + remote control + Socket.IO push
 @app.route("/screen-live/<stream_id>")
 def _screen_live_page(stream_id):
-    # V11.2.34: MJPEG stream + click/swipe (بسيط وسريع مثل YouTube)
+    # V11.2.35: Socket.IO push (سريع) + click/swipe
     html = f"""<!DOCTYPE html>
 <html>
 <head>
@@ -2142,23 +2142,23 @@ def _screen_live_page(stream_id):
 </head>
 <body>
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
-    <div class="header">📺 بث مباشر (MJPEG) + 🖱️ تحكم بالنقر والسحب</div>
+    <div class="header">📺 بث مباشر + 🖱️ تحكم</div>
     <div class="screen-area">
         <div class="screen-wrap" id="screenWrap">
-            <!-- ⚡ V11.2.34: MJPEG stream — <img> تتحدث تلقائياً (لا JavaScript) -->
-            <img id="screen" src="/video-stream/{stream_id}" alt="بث مباشر..." />
+            <img id="screen" src="" alt="انتظار..." />
             <div class="click-dot" id="clickDot"></div>
         </div>
     </div>
     <div class="controls">
         <span class="toggle on" id="clickToggle">🖱️ النقر: مفعل</span>
     </div>
-    <div class="status" id="status">⏳ جاري الاتصال بالبث...</div>
+    <div class="status" id="status">⏳ جاري الاتصال...</div>
     <script>
         var streamId = "{stream_id}";
+        var count = 0;
+        var lastFrameTime = 0;
         var clickEnabled = true;
 
-        // ⚡ Socket.IO للنقر والسحب فقط (البث عبر MJPEG <img>)
         var socket = io({{
             transports: ['websocket'],
             upgrade: false,
@@ -2168,11 +2168,24 @@ def _screen_live_page(stream_id):
         }});
 
         socket.on('connect', function() {{
-            document.getElementById('status').textContent = '✅ متصل — البث يعمل';
+            document.getElementById('status').textContent = '✅ متصل';
+            socket.emit('screen_join', {{ stream_id: streamId }});
         }});
 
         socket.on('disconnect', function() {{
-            document.getElementById('status').textContent = '⚠️ انقطع التحكم — البث يستمر';
+            document.getElementById('status').textContent = '⚠️ انقطع';
+        }});
+
+        // ⚡ V11.2.35: استقبال الإطارات عبر Socket.IO (سريع)
+        socket.on('screen_frame_push', function(data) {{
+            if (data && data.image && data.stream_id === streamId) {{
+                document.getElementById('screen').src = 'data:image/jpeg;base64,' + data.image;
+                count++;
+                var now = Date.now();
+                var fps = lastFrameTime > 0 ? Math.round(1000 / (now - lastFrameTime)) : 0;
+                lastFrameTime = now;
+                document.getElementById('status').textContent = '✅ #' + count + ' (' + fps + ' FPS)';
+            }}
         }});
 
         // ⚡ النقر + السحب
@@ -2180,64 +2193,50 @@ def _screen_live_page(stream_id):
         var clickDot = document.getElementById('clickDot');
         var screenWrap = document.getElementById('screenWrap');
 
-        function handleClick(clientX, clientY) {{
+        function handleClick(cx, cy) {{
             if (!clickEnabled) return;
             var rect = screenImg.getBoundingClientRect();
-            if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return;
-            var x = clientX - rect.left;
-            var y = clientY - rect.top;
+            if (cx < rect.left || cx > rect.right || cy < rect.top || cy > rect.bottom) return;
+            var x = cx - rect.left, y = cy - rect.top;
             var pctX = (x / rect.width * 100).toFixed(1);
             var pctY = (y / rect.height * 100).toFixed(1);
-            clickDot.style.left = x + 'px';
-            clickDot.style.top = y + 'px';
-            clickDot.style.display = 'block';
-            clickDot.style.animation = 'none';
-            clickDot.offsetHeight;
-            clickDot.style.animation = 'dotFade 0.5s ease';
+            clickDot.style.left = x + 'px'; clickDot.style.top = y + 'px';
+            clickDot.style.display = 'block'; clickDot.style.animation = 'none';
+            clickDot.offsetHeight; clickDot.style.animation = 'dotFade 0.5s ease';
             setTimeout(function() {{ clickDot.style.display = 'none'; }}, 500);
             socket.emit('screen_click', {{ stream_id: streamId, x: parseFloat(pctX), y: parseFloat(pctY) }});
             document.getElementById('status').textContent = '🖱️ نقر: (' + pctX + '%, ' + pctY + '%)';
         }}
 
         var swipeStart = null;
-        var SWIPE_THRESHOLD = 10;
-
         function handleStart(cx, cy) {{
             var rect = screenImg.getBoundingClientRect();
-            swipeStart = {{ x: cx - rect.left, y: cy - rect.top, cx: cx, cy: cy, time: Date.now() }};
+            swipeStart = {{ x: cx-rect.left, y: cy-rect.top, cx: cx, cy: cy, time: Date.now() }};
         }}
-
         function handleEnd(cx, cy) {{
             if (!swipeStart || !clickEnabled) {{ swipeStart = null; return; }}
             var rect = screenImg.getBoundingClientRect();
-            var ex = cx - rect.left, ey = cy - rect.top;
-            var dx = ex - swipeStart.x, dy = ey - swipeStart.y;
-            var dist = Math.sqrt(dx*dx + dy*dy);
-            if (dist < SWIPE_THRESHOLD) {{
-                handleClick(swipeStart.cx, swipeStart.cy);
-            }} else {{
-                var x1 = (swipeStart.x / rect.width * 100).toFixed(1);
-                var y1 = (swipeStart.y / rect.height * 100).toFixed(1);
-                var x2 = (ex / rect.width * 100).toFixed(1);
-                var y2 = (ey / rect.height * 100).toFixed(1);
-                var dur = Math.max(100, Math.min(1000, Date.now() - swipeStart.time));
-                clickDot.style.left = swipeStart.x + 'px';
-                clickDot.style.top = swipeStart.y + 'px';
-                clickDot.style.display = 'block';
-                clickDot.style.animation = 'none';
-                clickDot.offsetHeight;
-                clickDot.style.animation = 'dotFade 0.5s ease';
+            var ex = cx-rect.left, ey = cy-rect.top;
+            var dist = Math.sqrt((ex-swipeStart.x)**2 + (ey-swipeStart.y)**2);
+            if (dist < 10) {{ handleClick(swipeStart.cx, swipeStart.cy); }}
+            else {{
+                var x1 = (swipeStart.x/rect.width*100).toFixed(1), y1 = (swipeStart.y/rect.height*100).toFixed(1);
+                var x2 = (ex/rect.width*100).toFixed(1), y2 = (ey/rect.height*100).toFixed(1);
+                var dur = Math.max(100, Math.min(1000, Date.now()-swipeStart.time));
+                clickDot.style.left = swipeStart.x+'px'; clickDot.style.top = swipeStart.y+'px';
+                clickDot.style.display = 'block'; clickDot.style.animation = 'none';
+                clickDot.offsetHeight; clickDot.style.animation = 'dotFade 0.5s ease';
                 setTimeout(function() {{ clickDot.style.display = 'none'; }}, 500);
-                socket.emit('screen_swipe', {{ stream_id: streamId, x1: parseFloat(x1), y1: parseFloat(y1), x2: parseFloat(x2), y2: parseFloat(y2), duration: dur }});
-                document.getElementById('status').textContent = '👆 سحب: (' + x1 + '%,' + y1 + '%) → (' + x2 + '%,' + y2 + '%)';
+                socket.emit('screen_swipe', {{ stream_id: streamId, x1:+x1, y1:+y1, x2:+x2, y2:+y2, duration:dur }});
+                document.getElementById('status').textContent = '👆 سحب: ('+x1+'%,'+y1+'%) → ('+x2+'%,'+y2+'%)';
             }}
             swipeStart = null;
         }}
 
         screenWrap.addEventListener('mousedown', function(e) {{ handleStart(e.clientX, e.clientY); }});
         screenWrap.addEventListener('mouseup', function(e) {{ handleEnd(e.clientX, e.clientY); }});
-        screenWrap.addEventListener('touchstart', function(e) {{ e.preventDefault(); if (e.touches.length > 0) {{ handleStart(e.touches[0].clientX, e.touches[0].clientY); }} }}, {{ passive: false }});
-        screenWrap.addEventListener('touchend', function(e) {{ e.preventDefault(); if (e.changedTouches.length > 0) {{ handleEnd(e.changedTouches[0].clientX, e.changedTouches[0].clientY); }} }}, {{ passive: false }});
+        screenWrap.addEventListener('touchstart', function(e) {{ e.preventDefault(); if(e.touches.length>0) handleStart(e.touches[0].clientX, e.touches[0].clientY); }}, {{passive:false}});
+        screenWrap.addEventListener('touchend', function(e) {{ e.preventDefault(); if(e.changedTouches.length>0) handleEnd(e.changedTouches[0].clientX, e.changedTouches[0].clientY); }}, {{passive:false}});
 
         document.getElementById('clickToggle').addEventListener('click', function() {{
             clickEnabled = !clickEnabled;
