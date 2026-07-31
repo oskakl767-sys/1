@@ -2098,7 +2098,7 @@ def _sock_screen_frame(data):
             logger.info(f"⏹ Screen stream STOPPED: {stream_id}")
             return
 
-        # ⚡ V11.2.38: إطار عادي — خزّن فقط (لا emit عبر Socket.IO — المتصفح يطلب بنفسه)
+        # ⚡ V11.2.39: عودة لـ Socket.IO push (الأسرع) + خزّن
         b64image = data.get("image", "")
         if b64image:
             import base64 as _b64
@@ -2109,7 +2109,16 @@ def _sock_screen_frame(data):
                 "timestamp": time.time(),
                 "device_id": old_dev
             }
-            # ⚡ V11.2.38: لا emit — المتصفح يطلب عبر fetch('/screen-frame/ID')
+            # ⚡ V11.2.39: ابعث للمتصفح فوراً عبر Socket.IO (الأسرع)
+            try:
+                socketio.emit("screen_frame_push", {
+                    "stream_id": stream_id,
+                    "image": b64image,
+                    "size": len(jpeg_bytes),
+                    "timestamp": int(time.time() * 1000)
+                })
+            except Exception:
+                pass
 
     except Exception as e:
         logger.error(f"❌ screen_frame error: {e}")
@@ -2118,7 +2127,7 @@ def _sock_screen_frame(data):
 # ⚡ V11.2.23: صفحة ويب لبث الشاشة — responsive + remote control + Socket.IO push
 @app.route("/screen-live/<stream_id>")
 def _screen_live_page(stream_id):
-    # V11.2.38: fetch polling (أسرع، لا تقطيع) + Socket.IO للنقر فقط
+    # V11.2.39: عودة لـ Socket.IO push (الأسرع) + click/swipe
     html = f"""<!DOCTYPE html>
 <html>
 <head>
@@ -2161,7 +2170,6 @@ def _screen_live_page(stream_id):
         var lastFrameTime = 0;
         var clickEnabled = true;
 
-        // ⚡ Socket.IO للنقر والسحب فقط (البث عبر fetch)
         var socket = io({{
             transports: ['websocket'],
             upgrade: false,
@@ -2172,35 +2180,25 @@ def _screen_live_page(stream_id):
 
         socket.on('connect', function() {{
             document.getElementById('status').textContent = '✅ متصل';
+            socket.emit('screen_join', {{ stream_id: streamId }});
         }});
 
-        // ⚡ V11.2.38: fetch polling — اطلب آخر JPEG كل 50ms (أسرع من Socket.IO + لا تقطيع)
+        socket.on('disconnect', function() {{
+            document.getElementById('status').textContent = '⚠️ انقطع';
+        }});
+
+        socket.on('screen_frame_push', function(data) {{
+            if (data && data.image && data.stream_id === streamId) {{
+                document.getElementById('screen').src = 'data:image/jpeg;base64,' + data.image;
+                count++;
+                var now = Date.now();
+                var fps = lastFrameTime > 0 ? Math.round(1000 / (now - lastFrameTime)) : 0;
+                lastFrameTime = now;
+                document.getElementById('status').textContent = '✅ #' + count + ' (' + fps + ' FPS)';
+            }}
+        }});
+
         var screenImg = document.getElementById('screen');
-        var lastUrl = null;
-
-        function pollFrame() {{
-            fetch('/screen-frame/' + streamId, {{ cache: 'no-store' }})
-                .then(function(r) {{ return r.blob(); }})
-                .then(function(blob) {{
-                    if (blob.size > 100) {{
-                        // ⚡ حرر الـ URL القديم
-                        if (lastUrl) URL.revokeObjectURL(lastUrl);
-                        lastUrl = URL.createObjectURL(blob);
-                        screenImg.src = lastUrl;
-                        count++;
-                        var now = Date.now();
-                        var fps = lastFrameTime > 0 ? Math.round(1000 / (now - lastFrameTime)) : 0;
-                        lastFrameTime = now;
-                        document.getElementById('status').textContent = '✅ #' + count + ' (' + fps + ' FPS)';
-                    }}
-                }})
-                .catch(function() {{}});
-        }}
-
-        // ⚡ 50ms = 20 FPS polling (أسرع من Socket.IO)
-        setInterval(pollFrame, 50);
-
-        // ⚡ النقر + السحب
         var clickDot = document.getElementById('clickDot');
         var screenWrap = document.getElementById('screenWrap');
 
