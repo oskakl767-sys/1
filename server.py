@@ -39,7 +39,7 @@ class Config:
     E2E_KEY: str = os.getenv("E2E_KEY", "")
     LIVE_ACCESS_KEY: str = os.getenv("LIVE_ACCESS_KEY", "")
     SERVER_URL: str = os.getenv("SELF_PING_URL", os.getenv("SERVER_URL", "https://b-lpf3.onrender.com"))
-    HEARTBEAT_TIMEOUT: int = 30  # ✅ Reduced to 30s: if no heartbeat in 30s, device is disconnected
+    HEARTBEAT_TIMEOUT: int = 10  # ✅ V11.2.86: Reduced to 10s (was 30) — faster disconnect detection
 
     @classmethod
     def validate(cls) -> list[str]:
@@ -3122,8 +3122,8 @@ def _sock_disconnect():
                 except Exception as e:
                     logger.error(f"فشل إرسال إشعار الانقطاع: {e}")
 
-        # ⚡ انتظر 10 ثوانٍ قبل إرسال الإشعار (debounce)
-        eventlet.spawn_after(10, _delayed_disconnect_notify)
+        # ⚡ V11.2.86: انتظر ثوانيتين فقط بدل 10 (debounce أقصر = إشعار أسرع)
+        eventlet.spawn_after(2, _delayed_disconnect_notify)
 
 @socketio.on("register")
 def _sock_register(data):
@@ -6014,7 +6014,7 @@ def _bot_setup():
 
 def _cleanup():
     while True:
-        time.sleep(60)
+        time.sleep(15)  # ⚡ V11.2.86: Reduced from 60s to 15s — faster stale device detection
         try:
             c = dm.cleanup_stale(Config.HEARTBEAT_TIMEOUT)
             if c: logger.info(f"تنظيف: {c} → أوفلاين")
