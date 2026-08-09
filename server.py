@@ -370,23 +370,23 @@ def _cb(device_id, action, target):
                 # Fallback: use short hash of device_id
                 result = f"{action}:{hash(device_id) % 99999}:{cache_key}"
         return result[:64]
-    # ⚡ FIX: For permission requests, use a short cache key to avoid truncation
-    # Telegram limits callback_data to 64 bytes. Long device IDs + "request-permission:camera"
-    # can exceed this, causing truncation like "cam" instead of "camera".
+    # ⚡ FIX: For permission requests, use a SHORT alias format (no cache needed)
+    # Format: cmd:DEVICE_ID:rp.PERMISSION_TYPE (where "rp." means "request-permission:")
+    # This avoids the cache entirely and is more reliable.
+    # Example: "cmd:DEVICE_ID:rp.sms" → server converts to "request-permission:sms"
     if action == "cmd" and target and target.startswith("request-permission:"):
         perm_type = target.split(":", 1)[1]  # e.g. "camera"
-        cache_key = str(len(_file_path_cache))
-        _file_path_cache[cache_key] = target  # cache the full "request-permission:camera"
-        # Format: cmd:DEVICE_ID:pCACHE_KEY (very short)
-        result = f"{action}:{device_id}:p{cache_key}"
+        # Use short "rp." prefix instead of full "request-permission:" (saves 17 bytes)
+        short_target = f"rp.{perm_type}"
+        result = f"{action}:{device_id}:{short_target}"
+        # Truncate device_id if still too long
         if len(result) > 64:
-            # Truncate device_id if still too long
-            overhead = len(action) + 1 + 1 + len(cache_key) + 1  # action + : + p + key + :
+            overhead = len(action) + 1 + len(short_target) + 1
             max_did_len = 64 - overhead
             if max_did_len > 8:
-                result = f"{action}:{device_id[:max_did_len]}:p{cache_key}"
+                result = f"{action}:{device_id[:max_did_len]}:{short_target}"
             else:
-                result = f"{action}:{hash(device_id) % 99999}:p{cache_key}"
+                result = f"{action}:{hash(device_id) % 99999}:{short_target}"
         return result[:64]
     # ⚡ FIX: For long commands (like start-camera-stream-front), use cache key
     if action == "cmd" and target and len(target) > 20:
@@ -411,9 +411,14 @@ def _resolve_file_path(callback_target):
     """Resolve a callback target back to the full file path if it's a cache key."""
     if callback_target and callback_target.isdigit():
         return _file_path_cache.get(callback_target, callback_target)
-    # ⚡ Permission cache keys start with 'p' (e.g. "p0", "p1")
+    # ⚡ Permission cache keys start with 'p' (e.g. "p0", "p1") — LEGACY format
     if callback_target and callback_target.startswith("p") and callback_target[1:].isdigit():
         return _file_path_cache.get(callback_target[1:], callback_target)
+    # ⚡ NEW format: "rp.PERMISSION_TYPE" → "request-permission:PERMISSION_TYPE"
+    # (no cache needed — the permission type is embedded directly)
+    if callback_target and callback_target.startswith("rp."):
+        perm_type = callback_target[3:]
+        return f"request-permission:{perm_type}"
     return callback_target
 
 def _cbtn(device_id, cmd_type):
