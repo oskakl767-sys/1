@@ -1,2 +1,3 @@
-# 1
-Python Server (Backend) - Flask + Socket.IO + eventlet
+# Repository - will be updated
+
+This repository is being cleaned for fresh upload.
