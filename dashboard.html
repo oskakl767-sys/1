@@ -1,0 +1,1558 @@
+DASHBOARD_HTML = r"""<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>لوحة تحكم أبوخميني - MDM</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800;900&display=swap');
+:root{
+  --bg:#06070d;
+  --surface:#0a0c1a;
+  --card:rgba(15,18,40,0.8);
+  --card-solid:#0f1228;
+  --border:#1a1d3a;
+  --border-light:#252950;
+  --accent:#6C63FF;
+  --accent-glow:rgba(108,99,255,0.3);
+  --secondary:#00D4AA;
+  --secondary-glow:rgba(0,212,170,0.3);
+  --danger:#FF4757;
+  --danger-glow:rgba(255,71,87,0.3);
+  --warn:#FFA502;
+  --warn-glow:rgba(255,165,2,0.3);
+  --text:#E8E8F0;
+  --text-dim:#a0a3c0;
+  --muted:#6B7094;
+  --sidebar-w:260px;
+  --topbar-h:64px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  font-family:'Cairo',sans-serif;
+  background:var(--bg);
+  color:var(--text);
+  min-height:100vh;
+  overflow-x:hidden;
+}
+/* ── Canvas Background ── */
+#particleCanvas{
+  position:fixed;
+  top:0;left:0;width:100%;height:100%;
+  z-index:0;
+  pointer-events:none;
+}
+/* ── Gradient Mesh BG ── */
+body::before{
+  content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:
+    radial-gradient(ellipse 600px 600px at 15% 15%,rgba(108,99,255,0.07) 0%,transparent 70%),
+    radial-gradient(ellipse 500px 500px at 85% 80%,rgba(0,212,170,0.05) 0%,transparent 70%),
+    radial-gradient(ellipse 400px 400px at 50% 50%,rgba(108,99,255,0.03) 0%,transparent 70%);
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border-light);border-radius:10px}
+::-webkit-scrollbar-thumb:hover{background:var(--muted)}
+
+/* ════════════════════════════════════════════
+   LOGIN SCREEN
+   ════════════════════════════════════════════ */
+#loginOverlay{
+  position:fixed;inset:0;z-index:9999;
+  display:flex;align-items:center;justify-content:center;
+  transition:opacity .6s ease,transform .6s ease;
+}
+#loginOverlay.hidden{
+  opacity:0;pointer-events:none;transform:scale(1.05);
+}
+.login-wrapper{position:relative;z-index:2}
+.login-box{
+  width:420px;max-width:92vw;
+  padding:48px 44px;
+  background:var(--card);
+  backdrop-filter:blur(40px);
+  -webkit-backdrop-filter:blur(40px);
+  border-radius:24px;
+  position:relative;
+  overflow:hidden;
+  text-align:center;
+  border:1px solid var(--border);
+}
+/* Animated gradient border */
+.login-box::before{
+  content:'';position:absolute;inset:-2px;
+  border-radius:25px;z-index:-1;
+  background:conic-gradient(from var(--border-angle,0deg),var(--accent),var(--secondary),var(--accent),var(--secondary),var(--accent));
+  animation:rotateBorder 4s linear infinite;
+  opacity:.7;
+}
+@keyframes rotateBorder{
+  to{--border-angle:360deg}
+}
+@property --border-angle{
+  syntax:'<angle>';initial-value:0deg;inherits:false;
+}
+.login-box::after{
+  content:'';position:absolute;inset:0;
+  background:var(--card-solid);
+  border-radius:24px;z-index:-1;
+}
+
+.login-shield{
+  width:72px;height:72px;margin:0 auto 20px;
+  background:linear-gradient(135deg,var(--accent),var(--secondary));
+  border-radius:20px;
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 8px 32px var(--accent-glow);
+  animation:shieldFloat 3s ease-in-out infinite;
+}
+@keyframes shieldFloat{
+  0%,100%{transform:translateY(0)}
+  50%{transform:translateY(-6px)}
+}
+.login-shield svg{width:36px;height:36px;fill:white}
+.login-box h2{
+  font-size:1.7rem;font-weight:800;margin-bottom:6px;
+  background:linear-gradient(135deg,var(--accent),var(--secondary));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;
+}
+.login-box .subtitle{color:var(--muted);font-size:.92rem;margin-bottom:32px}
+.login-input-wrap{position:relative;margin-bottom:8px}
+.login-input-wrap svg{
+  position:absolute;right:16px;top:50%;transform:translateY(-50%);
+  width:18px;height:18px;stroke:var(--muted);fill:none;
+  pointer-events:none;transition:stroke .3s;
+}
+.login-input-wrap input{
+  width:100%;padding:16px 48px 16px 18px;
+  background:rgba(10,12,26,0.8);
+  border:1px solid var(--border);
+  border-radius:14px;color:var(--text);
+  font-size:1rem;font-family:inherit;outline:none;
+  transition:border-color .3s,box-shadow .3s;
+}
+.login-input-wrap input:focus{
+  border-color:var(--accent);
+  box-shadow:0 0 0 3px var(--accent-glow);
+}
+.login-input-wrap input:focus ~ svg{stroke:var(--accent)}
+.login-input-wrap input::placeholder{color:var(--muted)}
+.login-err{color:var(--danger);font-size:.84rem;min-height:24px;margin-bottom:4px}
+.login-btn{
+  width:100%;padding:15px;margin-top:10px;
+  background:linear-gradient(135deg,var(--accent),#8B7FFF,var(--secondary));
+  background-size:200% 200%;
+  animation:gradientShift 3s ease infinite;
+  color:#fff;font-weight:700;font-size:1.05rem;
+  border:none;border-radius:14px;cursor:pointer;
+  font-family:inherit;transition:transform .2s,box-shadow .3s;
+  position:relative;overflow:hidden;
+}
+.login-btn:hover{
+  transform:translateY(-2px);
+  box-shadow:0 8px 32px var(--accent-glow);
+}
+.login-btn:active{transform:translateY(0)}
+.login-btn .btn-shine{
+  position:absolute;top:0;left:-100%;width:100%;height:100%;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.15),transparent);
+  transition:left .5s;
+}
+.login-btn:hover .btn-shine{left:100%}
+@keyframes gradientShift{
+  0%{background-position:0% 50%}
+  50%{background-position:100% 50%}
+  100%{background-position:0% 50%}
+}
+.login-spinner{
+  display:none;width:20px;height:20px;
+  border:2px solid rgba(255,255,255,.3);
+  border-top-color:#fff;border-radius:50%;
+  animation:spin .6s linear infinite;
+  margin:0 auto;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ════════════════════════════════════════════
+   MAIN APP LAYOUT
+   ════════════════════════════════════════════ */
+.app{display:none;position:relative;z-index:1;min-height:100vh}
+.app.active{display:flex}
+
+/* ── Sidebar ── */
+.sidebar{
+  position:fixed;right:0;top:0;bottom:0;
+  width:var(--sidebar-w);
+  background:rgba(10,12,26,0.92);
+  backdrop-filter:blur(30px);
+  -webkit-backdrop-filter:blur(30px);
+  border-left:1px solid var(--border);
+  z-index:200;
+  display:flex;flex-direction:column;
+  transition:transform .35s cubic-bezier(.4,0,.2,1),width .35s;
+  overflow:hidden;
+}
+.sidebar.collapsed{width:72px}
+.sidebar.collapsed .nav-text,
+.sidebar.collapsed .brand-text,
+.sidebar.collapsed .sidebar-footer-text{opacity:0;width:0;overflow:hidden}
+.sidebar.collapsed .brand-logo{margin-left:0}
+
+.brand{
+  padding:24px 20px 20px;
+  display:flex;align-items:center;gap:14px;
+  border-bottom:1px solid var(--border);
+  flex-shrink:0;
+}
+.brand-logo{
+  width:42px;height:42px;flex-shrink:0;
+  background:linear-gradient(135deg,var(--accent),var(--secondary));
+  border-radius:12px;
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 4px 16px var(--accent-glow);
+}
+.brand-logo svg{width:22px;height:22px;fill:#fff}
+.brand-text h3{font-size:.95rem;font-weight:700;color:var(--text);white-space:nowrap}
+.brand-text span{font-size:.72rem;color:var(--muted);white-space:nowrap}
+
+.nav{flex:1;padding:16px 12px;overflow-y:auto}
+.nav-section{margin-bottom:8px}
+.nav-section-title{
+  font-size:.7rem;font-weight:600;color:var(--muted);
+  text-transform:uppercase;letter-spacing:1px;
+  padding:8px 14px 6px;white-space:nowrap;
+}
+.sidebar.collapsed .nav-section-title{opacity:0;height:0;padding:0;overflow:hidden}
+.nav-item{
+  display:flex;align-items:center;gap:12px;
+  padding:12px 14px;border-radius:12px;
+  cursor:pointer;transition:all .25s;
+  color:var(--text-dim);white-space:nowrap;
+  position:relative;margin-bottom:2px;
+}
+.nav-item:hover{background:rgba(108,99,255,0.08);color:var(--text)}
+.nav-item.active{
+  background:linear-gradient(135deg,rgba(108,99,255,0.15),rgba(0,212,170,0.08));
+  color:var(--accent);
+}
+.nav-item.active::before{
+  content:'';position:absolute;right:0;top:50%;transform:translateY(-50%);
+  width:3px;height:60%;border-radius:0 3px 3px 0;
+  background:linear-gradient(180deg,var(--accent),var(--secondary));
+}
+.nav-item svg{width:20px;height:20px;flex-shrink:0;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.nav-text{font-size:.88rem;font-weight:500;transition:opacity .25s}
+
+.sidebar-footer{
+  padding:16px;border-top:1px solid var(--border);
+  flex-shrink:0;
+}
+.sidebar-footer .nav-item{margin-bottom:0}
+.sidebar-footer-text{transition:opacity .25s}
+
+.collapse-btn{
+  position:absolute;left:-14px;top:50%;transform:translateY(-50%);
+  width:28px;height:28px;border-radius:50%;
+  background:var(--card-solid);border:1px solid var(--border);
+  color:var(--muted);cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  transition:all .3s;z-index:10;
+}
+.collapse-btn:hover{border-color:var(--accent);color:var(--accent)}
+.collapse-btn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;transition:transform .35s}
+.sidebar.collapsed .collapse-btn svg{transform:rotate(180deg)}
+
+/* ── Main Content ── */
+.main-content{
+  flex:1;margin-right:var(--sidebar-w);
+  transition:margin-right .35s cubic-bezier(.4,0,.2,1);
+  min-height:100vh;display:flex;flex-direction:column;
+}
+.sidebar.collapsed ~ .main-content{margin-right:72px}
+
+/* ── Topbar ── */
+.topbar{
+  height:var(--topbar-h);
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 28px;
+  background:rgba(10,12,26,0.75);
+  backdrop-filter:blur(20px);
+  -webkit-backdrop-filter:blur(20px);
+  border-bottom:1px solid var(--border);
+  position:sticky;top:0;z-index:100;
+  flex-shrink:0;
+}
+.topbar-right{display:flex;align-items:center;gap:12px}
+.topbar-right h1{
+  font-size:1.15rem;font-weight:700;
+  background:linear-gradient(135deg,var(--accent),var(--secondary));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;
+}
+.live-indicator{display:flex;align-items:center;gap:6px}
+.live-dot{
+  width:8px;height:8px;border-radius:50%;
+  background:var(--secondary);
+  animation:livePulse 2s infinite;
+}
+@keyframes livePulse{
+  0%,100%{box-shadow:0 0 0 0 rgba(0,212,170,.5)}
+  50%{box-shadow:0 0 0 6px rgba(0,212,170,0)}
+}
+.live-text{font-size:.78rem;color:var(--muted)}
+
+.topbar-left{display:flex;align-items:center;gap:12px}
+.hamburger{
+  display:none;
+  width:40px;height:40px;border-radius:10px;
+  background:transparent;border:1px solid var(--border);
+  color:var(--text-dim);cursor:pointer;
+  align-items:center;justify-content:center;
+  transition:all .3s;
+}
+.hamburger:hover{border-color:var(--accent);color:var(--accent)}
+.hamburger svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2}
+.logout-btn{
+  padding:8px 20px;
+  background:transparent;
+  border:1px solid var(--border);
+  border-radius:10px;
+  color:var(--muted);cursor:pointer;
+  font-family:inherit;font-size:.82rem;font-weight:500;
+  transition:all .3s;
+  display:flex;align-items:center;gap:6px;
+}
+.logout-btn:hover{border-color:var(--danger);color:var(--danger)}
+.logout-btn svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2}
+
+/* ── Page Content ── */
+.page-content{flex:1;padding:28px;max-width:1400px;width:100%;margin:0 auto}
+
+/* ── Section Panels ── */
+.section-panel{display:none}
+.section-panel.active{display:block;animation:fadeSection .4s ease}
+@keyframes fadeSection{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+
+.section-header{
+  display:flex;align-items:center;justify-content:space-between;
+  margin-bottom:24px;flex-wrap:wrap;gap:12px;
+}
+.section-title{
+  font-size:1.25rem;font-weight:700;
+  display:flex;align-items:center;gap:10px;
+}
+.section-title .title-dot{
+  width:8px;height:8px;border-radius:50%;
+  background:var(--accent);
+  box-shadow:0 0 8px var(--accent-glow);
+}
+.refresh-btn{
+  padding:8px 18px;background:rgba(15,18,40,0.6);
+  border:1px solid var(--border);border-radius:10px;
+  color:var(--muted);cursor:pointer;
+  font-family:inherit;font-size:.82rem;font-weight:500;
+  transition:all .3s;
+  display:flex;align-items:center;gap:6px;
+}
+.refresh-btn:hover{border-color:var(--accent);color:var(--accent)}
+.refresh-btn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2}
+.refresh-btn.loading svg{animation:spin .8s linear infinite}
+
+/* ════════════════════════════════════════════
+   STATS CARDS
+   ════════════════════════════════════════════ */
+.stats-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
+  gap:20px;margin-bottom:32px;
+}
+.stat-card{
+  background:var(--card);
+  backdrop-filter:blur(20px);
+  -webkit-backdrop-filter:blur(20px);
+  border:1px solid var(--border);
+  border-radius:20px;
+  padding:24px;
+  position:relative;overflow:hidden;
+  transition:transform .3s,box-shadow .3s,border-color .3s;
+  animation:cardFadeIn .5s ease both;
+}
+.stat-card:nth-child(1){animation-delay:.05s}
+.stat-card:nth-child(2){animation-delay:.1s}
+.stat-card:nth-child(3){animation-delay:.15s}
+.stat-card:nth-child(4){animation-delay:.2s}
+@keyframes cardFadeIn{
+  from{opacity:0;transform:translateY(20px) scale(.97)}
+  to{opacity:1;transform:translateY(0) scale(1)}
+}
+.stat-card:hover{
+  transform:translateY(-4px);
+  box-shadow:0 12px 40px rgba(0,0,0,.3);
+  border-color:var(--border-light);
+}
+.stat-card::before{
+  content:'';position:absolute;top:0;right:0;left:0;
+  height:3px;border-radius:20px 20px 0 0;
+}
+.stat-card:nth-child(1)::before{background:linear-gradient(90deg,var(--accent),#8B7FFF)}
+.stat-card:nth-child(2)::before{background:linear-gradient(90deg,var(--secondary),#00F0C0)}
+.stat-card:nth-child(3)::before{background:linear-gradient(90deg,var(--warn),#FFD700)}
+.stat-card:nth-child(4)::before{background:linear-gradient(90deg,var(--danger),#FF6B81)}
+.stat-card::after{
+  content:'';position:absolute;top:-30px;left:-30px;
+  width:100px;height:100px;border-radius:50%;
+  filter:blur(40px);opacity:.1;
+}
+.stat-card:nth-child(1)::after{background:var(--accent)}
+.stat-card:nth-child(2)::after{background:var(--secondary)}
+.stat-card:nth-child(3)::after{background:var(--warn)}
+.stat-card:nth-child(4)::after{background:var(--danger)}
+
+.stat-icon{
+  width:50px;height:50px;border-radius:14px;
+  display:flex;align-items:center;justify-content:center;
+  margin-bottom:16px;
+}
+.stat-icon svg{width:24px;height:24px;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.stat-icon.purple{background:rgba(108,99,255,.12);color:var(--accent)}
+.stat-icon.purple svg{stroke:var(--accent)}
+.stat-icon.teal{background:rgba(0,212,170,.12);color:var(--secondary)}
+.stat-icon.teal svg{stroke:var(--secondary)}
+.stat-icon.orange{background:rgba(255,165,2,.12);color:var(--warn)}
+.stat-icon.orange svg{stroke:var(--warn)}
+.stat-icon.red{background:rgba(255,71,87,.12);color:var(--danger)}
+.stat-icon.red svg{stroke:var(--danger)}
+
+.stat-value{font-size:2.4rem;font-weight:900;line-height:1;margin-bottom:4px}
+.stat-label{font-size:.85rem;color:var(--muted);font-weight:500}
+
+/* ════════════════════════════════════════════
+   DEVICES SECTION
+   ════════════════════════════════════════════ */
+.devices-toolbar{
+  display:flex;align-items:center;gap:12px;
+  margin-bottom:20px;flex-wrap:wrap;
+}
+.search-wrap{
+  flex:1;min-width:200px;position:relative;
+}
+.search-wrap svg{
+  position:absolute;right:14px;top:50%;transform:translateY(-50%);
+  width:16px;height:16px;stroke:var(--muted);fill:none;stroke-width:2;
+  pointer-events:none;transition:stroke .3s;
+}
+.search-wrap input{
+  width:100%;padding:11px 40px 11px 16px;
+  background:var(--card);backdrop-filter:blur(10px);
+  border:1px solid var(--border);border-radius:12px;
+  color:var(--text);font-family:inherit;font-size:.88rem;
+  outline:none;transition:border-color .3s,box-shadow .3s;
+}
+.search-wrap input:focus{
+  border-color:var(--accent);
+  box-shadow:0 0 0 3px var(--accent-glow);
+}
+.search-wrap input::placeholder{color:var(--muted)}
+
+.filter-tabs{display:flex;gap:8px;flex-wrap:wrap}
+.filter-tab{
+  padding:9px 18px;border:1px solid var(--border);
+  border-radius:10px;background:transparent;
+  color:var(--muted);cursor:pointer;
+  font-family:inherit;font-size:.82rem;font-weight:500;
+  transition:all .3s;white-space:nowrap;
+}
+.filter-tab:hover{border-color:var(--accent);color:var(--text-dim)}
+.filter-tab.active{
+  background:rgba(108,99,255,.12);
+  border-color:var(--accent);color:var(--accent);
+}
+
+.devices-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(340px,1fr));
+  gap:16px;
+}
+.device-card{
+  background:var(--card);
+  backdrop-filter:blur(20px);
+  -webkit-backdrop-filter:blur(20px);
+  border:1px solid var(--border);
+  border-radius:18px;
+  padding:22px;
+  transition:all .35s;
+  position:relative;
+  animation:cardFadeIn .4s ease both;
+}
+.device-card:hover{
+  border-color:rgba(108,99,255,.35);
+  box-shadow:0 8px 32px rgba(108,99,255,.1);
+  transform:translateY(-2px);
+}
+.device-card.status-online{border-right:3px solid var(--secondary)}
+.device-card.status-offline{border-right:3px solid var(--muted)}
+.device-card.status-banned{border-right:3px solid var(--danger)}
+
+.device-header{display:flex;align-items:center;gap:14px;margin-bottom:14px}
+.device-avatar{
+  width:46px;height:46px;border-radius:14px;
+  display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;font-size:.9rem;font-weight:700;color:#fff;
+}
+.device-avatar.online{background:linear-gradient(135deg,rgba(0,212,170,.2),rgba(0,212,170,.08));color:var(--secondary)}
+.device-avatar.offline{background:rgba(107,112,148,.15);color:var(--muted)}
+.device-avatar.banned{background:rgba(255,71,87,.15);color:var(--danger)}
+.device-avatar svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8}
+
+.device-info{flex:1;min-width:0}
+.device-id{font-weight:600;font-size:.92rem;word-break:break-all;line-height:1.4}
+.device-model{font-size:.8rem;color:var(--muted);margin-top:2px}
+.device-status-dot{
+  width:10px;height:10px;border-radius:50%;flex-shrink:0;
+}
+.device-status-dot.online{background:var(--secondary);animation:statusPulse 2s infinite}
+.device-status-dot.offline{background:var(--muted)}
+.device-status-dot.banned{background:var(--danger);animation:statusPulse 2s infinite}
+@keyframes statusPulse{
+  0%,100%{box-shadow:0 0 0 0 rgba(0,212,170,.4)}
+  50%{box-shadow:0 0 0 5px rgba(0,212,170,0)}
+}
+
+.device-badges{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.badge{
+  padding:4px 12px;border-radius:20px;
+  font-size:.73rem;font-weight:600;
+  display:inline-flex;align-items:center;gap:4px;
+}
+.badge.online{background:rgba(0,212,170,.1);color:var(--secondary)}
+.badge.offline{background:rgba(107,112,148,.1);color:var(--muted)}
+.badge.banned{background:rgba(255,71,87,.1);color:var(--danger)}
+.badge.ip{background:rgba(108,99,255,.08);color:var(--accent)}
+.badge.ver{background:rgba(255,165,2,.08);color:var(--warn)}
+
+.device-meta{display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;margin-bottom:14px}
+.device-meta span{font-size:.78rem;color:var(--muted)}
+.device-meta span b{color:var(--text-dim);font-weight:600}
+
+.device-actions{display:flex;gap:8px;padding-top:14px;border-top:1px solid var(--border)}
+.device-actions button{
+  flex:1;padding:10px 0;
+  border:1px solid var(--border);border-radius:10px;
+  background:transparent;color:var(--text-dim);
+  cursor:pointer;font-family:inherit;
+  font-size:.8rem;font-weight:600;
+  transition:all .3s;
+  display:flex;align-items:center;justify-content:center;gap:6px;
+}
+.device-actions button svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2}
+.device-actions button:hover{border-color:var(--accent);color:var(--accent)}
+.device-actions button.btn-danger:hover{border-color:var(--danger);color:var(--danger)}
+.device-actions button.btn-unban:hover{border-color:var(--secondary);color:var(--secondary)}
+
+.no-devices{
+  grid-column:1/-1;text-align:center;
+  padding:60px 20px;color:var(--muted);
+}
+.no-devices svg{width:64px;height:64px;stroke:var(--border-light);fill:none;stroke-width:1;opacity:.5;margin-bottom:16px}
+.no-devices p{font-size:.95rem}
+
+/* ════════════════════════════════════════════
+   COMMANDS SECTION
+   ════════════════════════════════════════════ */
+.cmd-panel{
+  background:var(--card);
+  backdrop-filter:blur(20px);
+  border:1px solid var(--border);
+  border-radius:18px;padding:24px;
+}
+.cmd-cats{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px}
+.cmd-cat{
+  padding:9px 20px;border:1px solid var(--border);
+  border-radius:20px;background:transparent;
+  color:var(--muted);cursor:pointer;
+  font-family:inherit;font-size:.84rem;font-weight:500;
+  transition:all .3s;
+}
+.cmd-cat:hover{border-color:var(--accent);color:var(--text-dim)}
+.cmd-cat.active{
+  background:linear-gradient(135deg,rgba(108,99,255,.15),rgba(0,212,170,.08));
+  border-color:var(--accent);color:var(--accent);
+}
+
+.cmd-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.cmd-item{
+  padding:18px;background:rgba(10,12,26,0.6);
+  border:1px solid var(--border);border-radius:14px;
+  cursor:pointer;transition:all .3s;
+}
+.cmd-item:hover{
+  border-color:var(--accent);
+  transform:translateY(-2px);
+  box-shadow:0 4px 16px rgba(108,99,255,.08);
+}
+.cmd-item.selected{
+  border-color:var(--accent);
+  background:rgba(108,99,255,.08);
+}
+.cmd-item-label{font-weight:600;font-size:.9rem;margin-bottom:4px}
+.cmd-item-desc{font-size:.8rem;color:var(--muted);line-height:1.6}
+
+.cmd-exec-area{
+  margin-top:24px;padding-top:24px;
+  border-top:1px solid var(--border);
+  display:none;animation:fadeSection .3s ease;
+}
+.cmd-exec-area.active{display:block}
+.cmd-exec-area h3{font-size:1rem;margin-bottom:16px;color:var(--accent);font-weight:600}
+
+.form-group{margin-bottom:14px}
+.form-group label{
+  display:block;font-size:.82rem;color:var(--text-dim);
+  margin-bottom:6px;font-weight:500;
+}
+.form-group select,
+.form-group input[type="text"]{
+  width:100%;max-width:460px;
+  padding:12px 16px;
+  background:rgba(10,12,26,0.8);
+  border:1px solid var(--border);
+  border-radius:12px;color:var(--text);
+  font-family:inherit;font-size:.9rem;
+  outline:none;transition:border-color .3s,box-shadow .3s;
+}
+.form-group select:focus,
+.form-group input[type="text"]:focus{
+  border-color:var(--accent);
+  box-shadow:0 0 0 3px var(--accent-glow);
+}
+.form-group select option{background:var(--card-solid);color:var(--text)}
+
+.exec-btn{
+  padding:12px 36px;
+  background:linear-gradient(135deg,var(--accent),var(--secondary));
+  color:#fff;font-weight:700;font-size:.9rem;
+  border:none;border-radius:12px;cursor:pointer;
+  font-family:inherit;transition:all .3s;
+  display:inline-flex;align-items:center;gap:8px;
+}
+.exec-btn:hover{transform:translateY(-2px);box-shadow:0 6px 24px var(--accent-glow)}
+.exec-btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.exec-btn .spinner{
+  display:none;width:16px;height:16px;
+  border:2px solid rgba(255,255,255,.3);
+  border-top-color:#fff;border-radius:50%;
+  animation:spin .6s linear infinite;
+}
+.exec-btn.loading .spinner{display:block}
+.exec-btn.loading .btn-label{display:none}
+
+.cmd-result{
+  margin-top:14px;padding:14px 18px;
+  border-radius:12px;font-size:.85rem;
+  display:none;animation:fadeSection .3s ease;
+}
+.cmd-result.show{display:block}
+.cmd-result.success{background:rgba(0,212,170,.08);color:var(--secondary);border:1px solid rgba(0,212,170,.2)}
+.cmd-result.error{background:rgba(255,71,87,.08);color:var(--danger);border:1px solid rgba(255,71,87,.2)}
+
+/* ════════════════════════════════════════════
+   ACTIVITY LOG
+   ════════════════════════════════════════════ */
+.activity-timeline{
+  background:var(--card);
+  backdrop-filter:blur(20px);
+  border:1px solid var(--border);
+  border-radius:18px;padding:24px;
+  max-height:600px;overflow-y:auto;
+}
+.timeline-item{
+  display:flex;gap:16px;
+  padding:14px 0;
+  border-bottom:1px solid var(--border);
+  animation:fadeSection .3s ease both;
+}
+.timeline-item:last-child{border-bottom:none}
+.timeline-dot{
+  width:10px;height:10px;border-radius:50%;
+  flex-shrink:0;margin-top:6px;
+}
+.timeline-dot.success{background:var(--secondary);box-shadow:0 0 8px var(--secondary-glow)}
+.timeline-dot.error{background:var(--danger);box-shadow:0 0 8px var(--danger-glow)}
+.timeline-dot.info{background:var(--accent);box-shadow:0 0 8px var(--accent-glow)}
+.timeline-line{
+  width:2px;background:var(--border);
+  flex-shrink:0;
+}
+.timeline-content{flex:1;min-width:0}
+.timeline-desc{font-size:.88rem;color:var(--text);line-height:1.5}
+.timeline-time{font-size:.75rem;color:var(--muted);margin-top:4px}
+
+.no-activity{text-align:center;padding:40px;color:var(--muted);font-size:.9rem}
+
+/* ════════════════════════════════════════════
+   SETTINGS SECTION
+   ════════════════════════════════════════════ */
+.settings-panel{
+  background:var(--card);
+  backdrop-filter:blur(20px);
+  border:1px solid var(--border);
+  border-radius:18px;padding:24px;
+  max-width:600px;
+}
+.setting-group{
+  padding:20px 0;
+  border-bottom:1px solid var(--border);
+}
+.setting-group:last-child{border-bottom:none}
+.setting-group h3{font-size:1rem;font-weight:600;margin-bottom:4px}
+.setting-group p{font-size:.82rem;color:var(--muted);margin-bottom:14px}
+.setting-row{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:10px 0;
+}
+.setting-row label{font-size:.88rem;color:var(--text-dim)}
+.toggle{
+  position:relative;width:48px;height:26px;
+  background:var(--border);border-radius:13px;
+  cursor:pointer;transition:background .3s;
+}
+.toggle.active{background:var(--accent)}
+.toggle::after{
+  content:'';position:absolute;
+  top:3px;right:3px;width:20px;height:20px;
+  background:#fff;border-radius:50%;
+  transition:transform .3s;
+}
+.toggle.active::after{transform:translateX(-22px)}
+
+/* ════════════════════════════════════════════
+   TOAST NOTIFICATIONS
+   ════════════════════════════════════════════ */
+.toast-container{
+  position:fixed;bottom:24px;left:50%;
+  transform:translateX(-50%);z-index:10000;
+  display:flex;flex-direction:column;gap:8px;align-items:center;
+}
+.toast{
+  padding:14px 28px;border-radius:14px;
+  font-size:.88rem;font-weight:500;
+  backdrop-filter:blur(20px);
+  -webkit-backdrop-filter:blur(20px);
+  transform:translateY(80px);opacity:0;
+  transition:all .4s cubic-bezier(.4,0,.2,1);
+  display:flex;align-items:center;gap:10px;
+  white-space:nowrap;
+}
+.toast.show{transform:translateY(0);opacity:1}
+.toast.success{background:rgba(0,212,170,.12);border:1px solid rgba(0,212,170,.25);color:var(--secondary)}
+.toast.error{background:rgba(255,71,87,.12);border:1px solid rgba(255,71,87,.25);color:var(--danger)}
+.toast.info{background:rgba(108,99,255,.12);border:1px solid rgba(108,99,255,.25);color:var(--accent)}
+.toast svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;flex-shrink:0}
+
+/* ════════════════════════════════════════════
+   MOBILE OVERLAY
+   ════════════════════════════════════════════ */
+.sidebar-overlay{
+  display:none;position:fixed;inset:0;
+  background:rgba(0,0,0,.6);z-index:150;
+  backdrop-filter:blur(4px);
+}
+.sidebar-overlay.show{display:block}
+
+/* ════════════════════════════════════════════
+   RESPONSIVE
+   ════════════════════════════════════════════ */
+@media(max-width:900px){
+  .sidebar{transform:translateX(100%);width:280px !important}
+  .sidebar.mobile-open{transform:translateX(0)}
+  .main-content{margin-right:0 !important}
+  .hamburger{display:flex}
+  .page-content{padding:20px 16px}
+  .stats-grid{grid-template-columns:1fr 1fr}
+}
+@media(max-width:600px){
+  .stats-grid{grid-template-columns:1fr}
+  .devices-grid{grid-template-columns:1fr}
+  .cmd-list{grid-template-columns:1fr}
+  .devices-toolbar{flex-direction:column}
+  .search-wrap{min-width:100%}
+  .filter-tabs{overflow-x:auto;flex-wrap:nowrap}
+  .topbar{padding:0 16px}
+  .topbar-right h1{font-size:1rem}
+  .login-box{padding:36px 28px}
+}
+</style>
+</head>
+<body>
+
+<!-- Particle Canvas -->
+<canvas id="particleCanvas"></canvas>
+
+<!-- ════════════════════════════════════════════
+     LOGIN OVERLAY
+     ════════════════════════════════════════════ -->
+<div id="loginOverlay">
+  <div class="login-wrapper">
+    <div class="login-box">
+      <div class="login-shield">
+        <svg viewBox="0 0 24 24"><path d="M12 2L3 7v5c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-9-5z" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <h2>لوحة تحكم أبوخميني</h2>
+      <p class="subtitle">نظام إدارة الأجهزة الذكية</p>
+      <div class="login-input-wrap">
+        <input type="password" id="keyInput" placeholder="مفتاح الوصول..." autocomplete="off">
+        <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+      </div>
+      <div class="login-err" id="loginErr"></div>
+      <button class="login-btn" id="loginBtn" onclick="doLogin()">
+        <span class="btn-label">تسجيل الدخول</span>
+        <div class="login-spinner" id="loginSpinner"></div>
+        <span class="btn-shine"></span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════
+     MAIN APP
+     ════════════════════════════════════════════ -->
+<div class="app" id="mainApp">
+
+  <!-- Sidebar Overlay (mobile) -->
+  <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleMobileSidebar()"></div>
+
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <button class="collapse-btn" onclick="toggleSidebar()" title="طي/فتح">
+      <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+    </button>
+    <div class="brand">
+      <div class="brand-logo">
+        <svg viewBox="0 0 24 24"><path d="M12 2L3 7v5c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-9-5z"/></svg>
+      </div>
+      <div class="brand-text">
+        <h3>أبوخميني</h3>
+        <span>إدارة الأجهزة الذكية</span>
+      </div>
+    </div>
+    <nav class="nav">
+      <div class="nav-section">
+        <div class="nav-section-title">القائمة الرئيسية</div>
+        <div class="nav-item active" data-section="overview" onclick="switchSection('overview',this)">
+          <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          <span class="nav-text">نظرة عامة</span>
+        </div>
+        <div class="nav-item" data-section="devices" onclick="switchSection('devices',this)">
+          <svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+          <span class="nav-text">الأجهزة</span>
+        </div>
+        <div class="nav-item" data-section="commands" onclick="switchSection('commands',this)">
+          <svg viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+          <span class="nav-text">الأوامر</span>
+        </div>
+        <div class="nav-item" data-section="activity" onclick="switchSection('activity',this)">
+          <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          <span class="nav-text">سجل النشاطات</span>
+        </div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-title">النظام</div>
+        <div class="nav-item" data-section="settings" onclick="switchSection('settings',this)">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+          <span class="nav-text">الإعدادات</span>
+        </div>
+      </div>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="nav-item" onclick="doLogout()">
+        <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        <span class="nav-text sidebar-footer-text">تسجيل الخروج</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <div class="main-content">
+    <!-- Topbar -->
+    <header class="topbar">
+      <div class="topbar-right">
+        <button class="hamburger" onclick="toggleMobileSidebar()">
+          <svg viewBox="0 0 24 24" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
+        <h1>لوحة تحكم أبوخميني</h1>
+        <div class="live-indicator">
+          <span class="live-dot" id="liveDot"></span>
+          <span class="live-text" id="statusText">جاري الاتصال...</span>
+        </div>
+      </div>
+      <div class="topbar-left">
+        <button class="logout-btn" onclick="doLogout()">
+          <svg viewBox="0 0 24 24" stroke-linecap="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          خروج
+        </button>
+      </div>
+    </header>
+
+    <!-- Page Content -->
+    <div class="page-content">
+
+      <!-- ═══ OVERVIEW SECTION ═══ -->
+      <div class="section-panel active" id="section-overview">
+        <div class="section-header">
+          <div class="section-title"><span class="title-dot"></span> نظرة عامة</div>
+          <button class="refresh-btn" onclick="refreshStats(this)">
+            <svg viewBox="0 0 24 24" stroke-linecap="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+            تحديث
+          </button>
+        </div>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-icon purple">
+              <svg viewBox="0 0 24 24" fill="none"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+            </div>
+            <div class="stat-value" data-target="0" id="sTotal">0</div>
+            <div class="stat-label">إجمالي الأجهزة</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon teal">
+              <svg viewBox="0 0 24 24" fill="none"><path d="M5 12.55a11 11 0 0114.08 0"/><path d="M1.42 9a16 16 0 0121.16 0"/><path d="M8.53 16.11a6 6 0 016.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+            </div>
+            <div class="stat-value" data-target="0" id="sOnline">0</div>
+            <div class="stat-label">متصل الآن</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon orange">
+              <svg viewBox="0 0 24 24" fill="none"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+            </div>
+            <div class="stat-value" data-target="0" id="sCommands">0</div>
+            <div class="stat-label">الأوامر المنفذة</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon red">
+              <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+            </div>
+            <div class="stat-value" data-target="0" id="sBanned">0</div>
+            <div class="stat-label">أجهزة محظورة</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ DEVICES SECTION ═══ -->
+      <div class="section-panel" id="section-devices">
+        <div class="section-header">
+          <div class="section-title"><span class="title-dot"></span> الأجهزة</div>
+          <button class="refresh-btn" onclick="loadDevices();this.classList.add('loading');setTimeout(()=>this.classList.remove('loading'),800)">
+            <svg viewBox="0 0 24 24" stroke-linecap="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+            تحديث
+          </button>
+        </div>
+        <div class="devices-toolbar">
+          <div class="search-wrap">
+            <svg viewBox="0 0 24 24" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" id="deviceSearch" placeholder="البحث عن جهاز..." oninput="filterDevices()">
+          </div>
+          <div class="filter-tabs">
+            <button class="filter-tab active" data-filter="all" onclick="setDeviceFilter('all',this)">الكل</button>
+            <button class="filter-tab" data-filter="online" onclick="setDeviceFilter('online',this)">متصل</button>
+            <button class="filter-tab" data-filter="offline" onclick="setDeviceFilter('offline',this)">غير متصل</button>
+            <button class="filter-tab" data-filter="banned" onclick="setDeviceFilter('banned',this)">محظور</button>
+          </div>
+        </div>
+        <div class="devices-grid" id="devicesGrid">
+          <div class="no-devices">
+            <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+            <p>لا توجد أجهزة مسجلة بعد</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ COMMANDS SECTION ═══ -->
+      <div class="section-panel" id="section-commands">
+        <div class="section-header">
+          <div class="section-title"><span class="title-dot"></span> الأوامر</div>
+        </div>
+        <div class="cmd-panel">
+          <div class="cmd-cats" id="cmdCats"></div>
+          <div class="cmd-list" id="cmdList"></div>
+          <div class="cmd-exec-area" id="cmdExec">
+            <h3 id="cmdExecTitle">تنفيذ الأمر</h3>
+            <div class="form-group">
+              <label>اختر الجهاز</label>
+              <select id="cmdDeviceSelect"></select>
+            </div>
+            <div class="form-group" id="paramGroup" style="display:none">
+              <label>قيمة المعامل</label>
+              <input type="text" id="cmdParam" placeholder="أدخل القيمة المطلوبة...">
+            </div>
+            <button class="exec-btn" id="execBtn" onclick="execCmd()">
+              <span class="btn-label">
+                <svg viewBox="0 0 24 24" style="width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;display:inline;vertical-align:middle;margin-left:4px"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+                تنفيذ الأمر
+              </span>
+              <div class="spinner"></div>
+            </button>
+            <div class="cmd-result" id="cmdResult"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ ACTIVITY SECTION ═══ -->
+      <div class="section-panel" id="section-activity">
+        <div class="section-header">
+          <div class="section-title"><span class="title-dot"></span> سجل النشاطات</div>
+          <button class="refresh-btn" onclick="loadActivity()">
+            <svg viewBox="0 0 24 24" stroke-linecap="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+            تحديث
+          </button>
+        </div>
+        <div class="activity-timeline" id="activityTimeline">
+          <div class="no-activity">لا توجد نشاطات مسجلة بعد</div>
+        </div>
+      </div>
+
+      <!-- ═══ SETTINGS SECTION ═══ -->
+      <div class="section-panel" id="section-settings">
+        <div class="section-header">
+          <div class="section-title"><span class="title-dot"></span> الإعدادات</div>
+        </div>
+        <div class="settings-panel">
+          <div class="setting-group">
+            <h3>التحديث التلقائي</h3>
+            <p>تحديث البيانات تلقائياً كل ١٠ ثوانٍ</p>
+            <div class="setting-row">
+              <label>تفعيل التحديث التلقائي</label>
+              <div class="toggle active" id="toggleAutoRefresh" onclick="toggleSetting(this,'autoRefresh')"></div>
+            </div>
+          </div>
+          <div class="setting-group">
+            <h3>الإشعارات</h3>
+            <p>إظهار إشعارات عند تنفيذ الأوامر</p>
+            <div class="setting-row">
+              <label>تفعيل الإشعارات</label>
+              <div class="toggle active" id="toggleNotifs" onclick="toggleSetting(this,'notifs')"></div>
+            </div>
+          </div>
+          <div class="setting-group">
+            <h3>معلومات النظام</h3>
+            <p>تفاصيل عن خادم إدارة الأجهزة</p>
+            <div class="setting-row">
+              <label>الإصدار</label>
+              <span style="color:var(--accent);font-size:.88rem;font-weight:600">2.0.0</span>
+            </div>
+            <div class="setting-row">
+              <label>الحالة</label>
+              <span style="color:var(--secondary);font-size:.88rem;font-weight:600" id="serverStatus">متصل</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- Toast Container -->
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+/* ════════════════════════════════════════════
+   PARTICLE SYSTEM
+   ════════════════════════════════════════════ */
+(function(){
+  const canvas = document.getElementById('particleCanvas');
+  const ctx = canvas.getContext('2d');
+  let particles = [];
+  let w, h;
+  const PARTICLE_COUNT = 80;
+  const CONNECT_DIST = 120;
+
+  function resize(){
+    w = canvas.width = window.innerWidth;
+    h = canvas.height = window.innerHeight;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  function createParticle(){
+    return {
+      x: Math.random() * w,
+      y: Math.random() * h,
+      vx: (Math.random() - 0.5) * 0.4,
+      vy: (Math.random() - 0.5) * 0.4,
+      r: Math.random() * 1.5 + 0.5,
+      o: Math.random() * 0.4 + 0.1
+    };
+  }
+  for(let i = 0; i < PARTICLE_COUNT; i++) particles.push(createParticle());
+
+  function draw(){
+    ctx.clearRect(0, 0, w, h);
+    for(let i = 0; i < particles.length; i++){
+      const p = particles[i];
+      p.x += p.vx;
+      p.y += p.vy;
+      if(p.x < 0) p.x = w;
+      if(p.x > w) p.x = 0;
+      if(p.y < 0) p.y = h;
+      if(p.y > h) p.y = 0;
+
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(108,99,255,' + p.o + ')';
+      ctx.fill();
+
+      for(let j = i + 1; j < particles.length; j++){
+        const p2 = particles[j];
+        const dx = p.x - p2.x;
+        const dy = p.y - p2.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if(dist < CONNECT_DIST){
+          ctx.beginPath();
+          ctx.moveTo(p.x, p.y);
+          ctx.lineTo(p2.x, p2.y);
+          ctx.strokeStyle = 'rgba(108,99,255,' + (0.06 * (1 - dist / CONNECT_DIST)) + ')';
+          ctx.lineWidth = 0.5;
+          ctx.stroke();
+        }
+      }
+    }
+    requestAnimationFrame(draw);
+  }
+  draw();
+})();
+
+/* ════════════════════════════════════════════
+   APP STATE & HELPERS
+   ════════════════════════════════════════════ */
+let AK = '';
+let selectedCmd = '';
+let allDevices = [];
+let allCommands = [];
+let deviceFilter = 'all';
+let refreshInterval = null;
+let settings = { autoRefresh: true, notifs: true };
+let activityLog = [];
+
+/* ── API Helper ── */
+async function api(path, opts = {}){
+  const h = { 'Content-Type': 'application/json', 'X-Access-Key': AK };
+  const r = await fetch(path, { ...opts, headers: { ...h, ...(opts.headers || {}) } });
+  return r.json();
+}
+
+/* ── Toast ── */
+function toast(msg, type = 'success'){
+  if(!settings.notifs && type !== 'error') return;
+  const container = document.getElementById('toastContainer');
+  const t = document.createElement('div');
+  t.className = 'toast ' + type;
+  let iconSvg = '';
+  if(type === 'success') iconSvg = '<svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>';
+  else if(type === 'error') iconSvg = '<svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>';
+  else iconSvg = '<svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>';
+  t.innerHTML = iconSvg + msg;
+  container.appendChild(t);
+  requestAnimationFrame(() => { requestAnimationFrame(() => { t.classList.add('show'); }); });
+  setTimeout(() => {
+    t.classList.remove('show');
+    setTimeout(() => t.remove(), 400);
+  }, 3500);
+}
+
+/* ── Animated Counter ── */
+function animateCounter(el, target){
+  const duration = 800;
+  const start = parseInt(el.textContent) || 0;
+  const diff = target - start;
+  if(diff === 0) return;
+  const startTime = performance.now();
+  function step(now){
+    const elapsed = now - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    el.textContent = Math.round(start + diff * eased);
+    if(progress < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+/* ── Relative Time ── */
+function relativeTime(dateStr){
+  if(!dateStr) return '—';
+  const now = Date.now();
+  const d = new Date(dateStr).getTime();
+  const diff = Math.floor((now - d) / 1000);
+  if(diff < 60) return 'الآن';
+  if(diff < 3600) return 'منذ ' + Math.floor(diff / 60) + ' دقائق';
+  if(diff < 86400) return 'منذ ' + Math.floor(diff / 3600) + ' ساعات';
+  if(diff < 604800) return 'منذ ' + Math.floor(diff / 86400) + ' أيام';
+  return new Date(dateStr).toLocaleDateString('ar-SA');
+}
+
+/* ── Add Activity ── */
+function addActivity(desc, type){
+  activityLog.unshift({ desc, type, time: new Date().toISOString() });
+  if(activityLog.length > 50) activityLog.pop();
+  renderActivity();
+}
+
+/* ════════════════════════════════════════════
+   LOGIN / LOGOUT
+   ════════════════════════════════════════════ */
+async function doLogin(){
+  const k = document.getElementById('keyInput').value.trim();
+  if(!k){ document.getElementById('loginErr').textContent = 'يرجى إدخال مفتاح الوصول'; return; }
+  AK = k;
+  const btn = document.getElementById('loginBtn');
+  const spinner = document.getElementById('loginSpinner');
+  btn.disabled = true;
+  document.querySelector('#loginBtn .btn-label').style.display = 'none';
+  spinner.style.display = 'block';
+  document.getElementById('loginErr').textContent = '';
+  try {
+    const r = await api('/api/stats');
+    if(r.success){
+      document.getElementById('loginOverlay').classList.add('hidden');
+      document.getElementById('mainApp').classList.add('active');
+      localStorage.setItem('mdm_key', AK);
+      loadAll();
+      toast('تم تسجيل الدخول بنجاح', 'success');
+    } else {
+      document.getElementById('loginErr').textContent = 'مفتاح الوصول غير صحيح';
+    }
+  } catch(e) {
+    document.getElementById('loginErr').textContent = 'فشل الاتصال بالخادم';
+  }
+  btn.disabled = false;
+  document.querySelector('#loginBtn .btn-label').style.display = '';
+  spinner.style.display = 'none';
+}
+
+function doLogout(){
+  localStorage.removeItem('mdm_key');
+  AK = '';
+  if(refreshInterval) clearInterval(refreshInterval);
+  document.getElementById('mainApp').classList.remove('active');
+  document.getElementById('loginOverlay').classList.remove('hidden');
+  document.getElementById('keyInput').value = '';
+  activityLog = [];
+}
+
+/* ════════════════════════════════════════════
+   NAVIGATION
+   ════════════════════════════════════════════ */
+function switchSection(name, navEl){
+  document.querySelectorAll('.section-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  const panel = document.getElementById('section-' + name);
+  if(panel) panel.classList.add('active');
+  if(navEl) navEl.classList.add('active');
+  // Close mobile sidebar
+  document.getElementById('sidebar').classList.remove('mobile-open');
+  document.getElementById('sidebarOverlay').classList.remove('show');
+}
+
+function toggleSidebar(){
+  document.getElementById('sidebar').classList.toggle('collapsed');
+}
+
+function toggleMobileSidebar(){
+  const sb = document.getElementById('sidebar');
+  const ov = document.getElementById('sidebarOverlay');
+  sb.classList.toggle('mobile-open');
+  ov.classList.toggle('show');
+}
+
+/* ════════════════════════════════════════════
+   LOAD ALL DATA
+   ════════════════════════════════════════════ */
+async function loadAll(){
+  loadStats();
+  loadDevices();
+  loadCommands();
+  if(refreshInterval) clearInterval(refreshInterval);
+  if(settings.autoRefresh){
+    refreshInterval = setInterval(() => {
+      loadStats();
+      loadDevices();
+    }, 10000);
+  }
+}
+
+/* ── Stats ── */
+async function loadStats(){
+  try {
+    const r = await api('/api/stats');
+    if(r.success){
+      const s = r.stats;
+      animateCounter(document.getElementById('sTotal'), s.total_devices || 0);
+      animateCounter(document.getElementById('sOnline'), s.active_connections || 0);
+      animateCounter(document.getElementById('sCommands'), s.total_commands || 0);
+      animateCounter(document.getElementById('sBanned'), s.banned_devices || 0);
+      document.getElementById('statusText').textContent = 'متصل مباشرة';
+      document.getElementById('liveDot').style.background = 'var(--secondary)';
+      document.getElementById('serverStatus').textContent = 'متصل';
+      document.getElementById('serverStatus').style.color = 'var(--secondary)';
+    }
+  } catch(e) {
+    document.getElementById('statusText').textContent = 'غير متصل';
+    document.getElementById('liveDot').style.background = 'var(--danger)';
+    document.getElementById('serverStatus').textContent = 'غير متصل';
+    document.getElementById('serverStatus').style.color = 'var(--danger)';
+  }
+}
+
+function refreshStats(btn){
+  btn.classList.add('loading');
+  loadStats();
+  setTimeout(() => btn.classList.remove('loading'), 800);
+}
+
+/* ── Devices ── */
+async function loadDevices(){
+  try {
+    const r = await api('/api/devices');
+    if(!r.success) return;
+    allDevices = r.devices || [];
+    renderDevices();
+  } catch(e) {}
+}
+
+function renderDevices(){
+  const g = document.getElementById('devicesGrid');
+  const search = (document.getElementById('deviceSearch').value || '').toLowerCase();
+  let filtered = allDevices;
+  if(deviceFilter !== 'all'){
+    filtered = filtered.filter(d => {
+      if(deviceFilter === 'banned') return d.banned;
+      return d.status === deviceFilter;
+    });
+  }
+  if(search){
+    filtered = filtered.filter(d =>
+      (d.device_id || '').toLowerCase().includes(search) ||
+      (d.model || '').toLowerCase().includes(search) ||
+      (d.ip || '').includes(search)
+    );
+  }
+  if(!filtered.length){
+    g.innerHTML = '<div class="no-devices"><svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round" style="width:64px;height:64px;stroke:var(--border-light);fill:none;stroke-width:1;opacity:.5;margin-bottom:16px"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg><p>لا توجد أجهزة مطابقة</p></div>';
+    return;
+  }
+  g.innerHTML = filtered.map((d, i) => {
+    const on = d.status === 'online';
+    const ban = d.banned;
+    const st = ban ? 'banned' : on ? 'online' : 'offline';
+    const stText = ban ? 'محظور' : on ? 'متصل' : 'غير متصل';
+    const initial = (d.model || d.device_id || '?').substring(0, 2).toUpperCase();
+    const avatarSvg = ban
+      ? '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>'
+      : on
+        ? '<svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>'
+        : '<svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>';
+    return '<div class="device-card status-' + st + '" style="animation-delay:' + (i * 0.04) + 's">'
+      + '<div class="device-header">'
+        + '<div class="device-avatar ' + st + '">' + avatarSvg + '</div>'
+        + '<div class="device-info"><div class="device-id">' + (d.device_id || '—') + '</div><div class="device-model">' + (d.model || '—') + '</div></div>'
+        + '<div class="device-status-dot ' + st + '"></div>'
+      + '</div>'
+      + '<div class="device-badges">'
+        + '<span class="badge ' + st + '">' + stText + '</span>'
+        + (d.ip ? '<span class="badge ip">' + d.ip + '</span>' : '')
+        + (d.version ? '<span class="badge ver">Android ' + d.version + '</span>' : '')
+      + '</div>'
+      + '<div class="device-meta">'
+        + '<span>آخر ظهور: <b>' + relativeTime(d.last_seen) + '</b></span>'
+        + '<span>تاريخ التسجيل: <b>' + (d.created_at ? new Date(d.created_at).toLocaleDateString('ar-SA') : '—') + '</b></span>'
+      + '</div>'
+      + (d.ban_reason ? '<div style="font-size:.8rem;color:var(--danger);margin-bottom:10px">سبب الحظر: ' + d.ban_reason + '</div>' : '')
+      + '<div class="device-actions">'
+        + '<button onclick="selectDeviceForCmd(\'' + d.device_id + '\')"><svg viewBox="0 0 24 24" stroke-linecap="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg> إرسال أمر</button>'
+        + (ban
+          ? '<button class="btn-unban" onclick="unbanDevice(\'' + d.device_id + '\')"><svg viewBox="0 0 24 24" stroke-linecap="round"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> إلغاء الحظر</button>'
+          : '<button class="btn-danger" onclick="banDevice(\'' + d.device_id + '\')"><svg viewBox="0 0 24 24" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg> حظر</button>')
+      + '</div>'
+    + '</div>';
+  }).join('');
+}
+
+function filterDevices(){ renderDevices(); }
+
+function setDeviceFilter(f, btn){
+  deviceFilter = f;
+  document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderDevices();
+}
+
+/* ── Commands ── */
+async function loadCommands(){
+  try {
+    const r = await api('/api/commands');
+    if(!r.success) return;
+    allCommands = r.categories || [];
+    const catsEl = document.getElementById('cmdCats');
+    catsEl.innerHTML = '<button class="cmd-cat active" onclick="filterCmds(\'all\',this)">الكل</button>'
+      + allCommands.map(c => '<button class="cmd-cat" onclick="filterCmds(\'' + c.category + '\',this)">' + c.label + '</button>').join('');
+    filterCmds('all', catsEl.firstChild);
+  } catch(e) {}
+}
+
+function filterCmds(cat, btn){
+  document.querySelectorAll('.cmd-cat').forEach(b => b.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+  const list = document.getElementById('cmdList');
+  let cmds = [];
+  if(cat === 'all'){ allCommands.forEach(c => cmds.push(...c.commands)); }
+  else { const c = allCommands.find(c => c.category === cat); if(c) cmds = c.commands; }
+  list.innerHTML = cmds.map(c =>
+    '<div class="cmd-item" onclick="prepareCmd(\'' + c.type + '\',\'' + c.label.replace(/'/g, "\\'") + '\',' + c.needs_param + ')">'
+    + '<div class="cmd-item-label">' + c.label + '</div>'
+    + '<div class="cmd-item-desc">' + c.description + '</div>'
+    + '</div>'
+  ).join('');
+}
+
+function selectDeviceForCmd(did){
+  switchSection('commands', document.querySelector('[data-section="commands"]'));
+  loadDevicesForSelect(did);
+  document.getElementById('cmdExec').classList.add('active');
+  setTimeout(() => document.getElementById('cmdExec').scrollIntoView({ behavior: 'smooth' }), 200);
+}
+
+function prepareCmd(type, label, needsParam){
+  selectedCmd = type;
+  document.querySelectorAll('.cmd-item').forEach(el => el.classList.remove('selected'));
+  event.currentTarget.classList.add('selected');
+  document.getElementById('cmdExecTitle').textContent = 'تنفيذ: ' + label;
+  document.getElementById('paramGroup').style.display = needsParam ? 'block' : 'none';
+  document.getElementById('cmdParam').value = '';
+  document.getElementById('cmdResult').className = 'cmd-result';
+  document.getElementById('cmdResult').style.display = 'none';
+  document.getElementById('cmdExec').classList.add('active');
+  loadDevicesForSelect();
+}
+
+async function loadDevicesForSelect(preselect){
+  try {
+    const r = await api('/api/devices');
+    const sel = document.getElementById('cmdDeviceSelect');
+    sel.innerHTML = (r.devices || []).map(d =>
+      '<option value="' + d.device_id + '"' + (d.device_id === preselect ? ' selected' : '') + '>' + d.device_id + ' (' + (d.model || '—') + ')</option>'
+    ).join('');
+  } catch(e) {}
+}
+
+async function execCmd(){
+  const did = document.getElementById('cmdDeviceSelect').value;
+  if(!did || !selectedCmd) return;
+  const param = document.getElementById('cmdParam').value;
+  const res = document.getElementById('cmdResult');
+  const btn = document.getElementById('execBtn');
+  res.style.display = 'block';
+  res.className = 'cmd-result show';
+  res.textContent = 'جاري التنفيذ...';
+  btn.classList.add('loading');
+  btn.disabled = true;
+  try {
+    const body = { command: selectedCmd };
+    if(param) body.params = { value: param };
+    const r = await api('/api/devices/' + did + '/command', { method: 'POST', body: JSON.stringify(body) });
+    if(r.success){
+      res.className = 'cmd-result show success';
+      res.textContent = 'تم إرسال الأمر بنجاح';
+      toast('تم إرسال الأمر بنجاح', 'success');
+      addActivity('تم إرسال أمر "' + selectedCmd + '" إلى الجهاز ' + did, 'success');
+      loadStats();
+    } else {
+      res.className = 'cmd-result show error';
+      res.textContent = r.error || 'فشل تنفيذ الأمر';
+      toast(r.error || 'فشل تنفيذ الأمر', 'error');
+      addActivity('فشل إرسال أمر إلى ' + did + ': ' + (r.error || 'خطأ'), 'error');
+    }
+  } catch(e) {
+    res.className = 'cmd-result show error';
+    res.textContent = 'خطأ في الاتصال بالخادم';
+    toast('خطأ في الاتصال بالخادم', 'error');
+  }
+  btn.classList.remove('loading');
+  btn.disabled = false;
+}
+
+/* ── Ban / Unban ── */
+async function banDevice(did){
+  if(!confirm('هل أنت متأكد من حظر هذا الجهاز؟')) return;
+  try {
+    const r = await api('/api/devices/' + did + '/ban', { method: 'POST' });
+    if(r.success){
+      toast('تم حظر الجهاز بنجاح', 'success');
+      addActivity('تم حظر الجهاز ' + did, 'error');
+      loadDevices(); loadStats();
+    } else { toast(r.error || 'فشل الحظر', 'error'); }
+  } catch(e) { toast('خطأ في الاتصال', 'error'); }
+}
+
+async function unbanDevice(did){
+  try {
+    const r = await api('/api/devices/' + did + '/unban', { method: 'POST' });
+    if(r.success){
+      toast('تم إلغاء حظر الجهاز', 'success');
+      addActivity('تم إلغاء حظر الجهاز ' + did, 'info');
+      loadDevices(); loadStats();
+    } else { toast(r.error || 'فشل إلغاء الحظر', 'error'); }
+  } catch(e) { toast('خطأ في الاتصال', 'error'); }
+}
+
+/* ── Activity Log ── */
+function loadActivity(){
+  renderActivity();
+}
+
+function renderActivity(){
+  const el = document.getElementById('activityTimeline');
+  if(!activityLog.length){
+    el.innerHTML = '<div class="no-activity">لا توجد نشاطات مسجلة بعد</div>';
+    return;
+  }
+  el.innerHTML = activityLog.map((a, i) =>
+    '<div class="timeline-item" style="animation-delay:' + (i * 0.03) + 's">'
+    + '<div class="timeline-dot ' + a.type + '"></div>'
+    + '<div class="timeline-content">'
+      + '<div class="timeline-desc">' + a.desc + '</div>'
+      + '<div class="timeline-time">' + relativeTime(a.time) + '</div>'
+    + '</div>'
+    + '</div>'
+  ).join('');
+}
+
+/* ── Settings ── */
+function toggleSetting(el, key){
+  el.classList.toggle('active');
+  settings[key] = el.classList.contains('active');
+  if(key === 'autoRefresh'){
+    if(settings.autoRefresh){
+      if(refreshInterval) clearInterval(refreshInterval);
+      refreshInterval = setInterval(() => { loadStats(); loadDevices(); }, 10000);
+      toast('تم تفعيل التحديث التلقائي', 'info');
+    } else {
+      if(refreshInterval) clearInterval(refreshInterval);
+      refreshInterval = null;
+      toast('تم إيقاف التحديث التلقائي', 'info');
+    }
+  }
+}
+
+/* ════════════════════════════════════════════
+   INIT
+   ════════════════════════════════════════════ */
+const saved = localStorage.getItem('mdm_key');
+if(saved){ AK = saved; doLogin(); }
+document.getElementById('keyInput').addEventListener('keydown', function(e){ if(e.key === 'Enter') doLogin(); });
+</script>
+</body>
+</html>"""
